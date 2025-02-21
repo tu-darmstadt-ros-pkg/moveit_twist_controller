@@ -1,0 +1,33 @@
+moveit_twist_controller:
+  free_angle:
+    {
+      type: string,
+      default_value: "",
+      description: "Axis where the actual rotation is free. -1 means no free angle.",
+      read_only: false,
+      validation: {
+        one_of<>: [["","x","y","z"]]
+      }
+    }
+
+  gripper_joint_name:
+    {
+      type: string,
+      default_value: "gripper_servo_joint",
+      description: "Name of the gripper joint in the urdf",
+      read_only: false,
+      validation: {
+        not_empty<>: []
+      }
+    }
+
+  group_name:
+    {
+      type: string,
+      default_value: "arm_group",
+      description: "Name of the group in the moveit configuration.",
+      read_only: false,
+      validation: {
+        not_empty<>: [ ]
+      }
+    }
