@@ -1,0 +1,9 @@
+<library path="moveit_twist_controller">
+  <class name="moveit_twist_controller/MoveitTwistController"
+         type="moveit_twist_controller::MoveitTwistController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>
+      IK joystick controller based on MoveIt interfaces.
+    </description>
+  </class>
+</library>

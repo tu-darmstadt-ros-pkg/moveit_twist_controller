@@ -1,0 +1,9 @@
+/**:
+  ros__parameters:
+    type: moveit_twist_controller/MoveitTwistController
+    group_name: arm_group # arm_with_gripper_cam_group
+    gripper_joint_name: gripper_servo_joint
+    twist_cmd_topic: /manipulator_arm_control/twist_cmd
+
+    test: "This is a successful test :)"
+
