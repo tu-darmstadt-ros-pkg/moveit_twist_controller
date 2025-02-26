@@ -66,7 +66,6 @@ private:
   geometry_msgs::msg::PoseStamped getPoseInFrame(const Eigen::Affine3d& pose,
                                                   const std::string &frame );
 
-  rclcpp::Node::SharedPtr node_;
 
   bool initialized_ = false;
   bool enabled_ ;
@@ -102,6 +101,10 @@ private:
   InverseKinematics ik_;
   bool hold_pose_;
   geometry_msgs::msg::PoseStamped hold_goal_pose_;
+
+  std::thread status_thread_;
+  rclcpp::Executor::SharedPtr executor_;
+  rclcpp::Node::SharedPtr status_node_;
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_cmd_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gripper_cmd_sub_;

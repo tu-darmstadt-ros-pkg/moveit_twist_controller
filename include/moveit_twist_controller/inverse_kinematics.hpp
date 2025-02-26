@@ -19,7 +19,7 @@ public:
   {
   }
 
-  bool init(const std::string& group_name);
+  bool init(rclcpp::Node::SharedPtr node, const std::string& group_name);
   bool calcInvKin(const Eigen::Affine3d &pose, const std::vector<double>& seed, std::vector<double> &solution);
   Eigen::Affine3d getEndEffectorPose(const std::vector<double>& joint_positions ) const;
 
@@ -32,6 +32,9 @@ public:
   bool getJointLimits(const std::string& joint_name, double& lower, double& upper) const;
 private:
   std::string moveitErrCodeToString(int32_t code);
+  std::string getParameterFromTopic(const std::string& topic ) const;
+  void mirrorKinematicParams();
+  void setKinematicParameters();
 
   robot_model_loader::RobotModelLoaderPtr robot_model_loader_;
   moveit::core::RobotModelPtr robot_model_;
