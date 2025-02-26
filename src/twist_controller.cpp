@@ -75,7 +75,13 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     else if ( params.free_angle == "z" )
       free_angle_ = 2;
 
-    ik_.init( params.group_name );
+    // start status thread
+    status_node_ = std::make_shared<rclcpp::Node>( "twist_controller_status", get_node()->get_namespace() );
+    executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+    executor_->add_node( status_node_ );
+    status_thread_ = std::thread( [this]() { executor_->spin(); } );
+
+    ik_.init( status_node_, params.group_name );
 
     // Populate joint_names_ from the IK solver
     joint_names_ = ik_.getAllJointNames();
