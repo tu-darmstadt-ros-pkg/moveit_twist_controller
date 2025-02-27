@@ -23,10 +23,11 @@ bool InverseKinematics::init( rclcpp::Node::SharedPtr node, const std::string &g
   robot_model_loader::RobotModelLoader::Options opt;
   opt.urdf_string_ = robot_description;
   opt.srdf_string = robot_description_semantic;
+  opt.robot_description = "robot_description";
   // test if robot_description can be receibed
   // auto subscriber = node_->create_subscription<std_msgs::msg::String>("robot_description"  )
 
-  robot_model_loader_.reset( new robot_model_loader::RobotModelLoader( node_ ) );
+  robot_model_loader_.reset( new robot_model_loader::RobotModelLoader( node_, opt ) );
   robot_model_ = robot_model_loader_->getModel();
   planning_scene_ = std::make_shared<planning_scene::PlanningScene>( robot_model_ );
   robot_state_.reset( new moveit::core::RobotState( robot_model_ ) );
@@ -239,22 +240,22 @@ std::string InverseKinematics::getParameterFromTopic( const std::string &topic )
 void InverseKinematics::setKinematicParameters()
 {
   // set this params
-  node_->declare_parameter<std::string>( "robot_description_kinematics.arm_group.kinematics_solver",
+  node_->declare_parameter<std::string>( "_kinematics.arm_group.kinematics_solver",
                                          "kdl_kinematics_plugin/KDLKinematicsPlugin" );
-  node_->set_parameter( rclcpp::Parameter( "robot_description_kinematics.arm_group.kinematics_solver",
+  node_->set_parameter( rclcpp::Parameter( "_kinematics.arm_group.kinematics_solver",
                                            "kdl_kinematics_plugin/KDLKinematicsPlugin" ) );
-  node_->declare_parameter<double>( "robot_description_kinematics.arm_group.kinematics_solver_search_resolution",
+  node_->declare_parameter<double>( "_kinematics.arm_group.kinematics_solver_search_resolution",
                                     0.0050000000000000001 );
   node_->set_parameter(
-      rclcpp::Parameter( "robot_description_kinematics.arm_group.kinematics_solver_search_resolution", 0.0050000000000000001 ) );
-  node_->declare_parameter<double>( "robot_description_kinematics.arm_group.kinematics_solver_timeout", 0.050000000000000003 );
+      rclcpp::Parameter( "_kinematics.arm_group.kinematics_solver_search_resolution", 0.0050000000000000001 ) );
+  node_->declare_parameter<double>( "_kinematics.arm_group.kinematics_solver_timeout", 0.050000000000000003 );
   node_->set_parameter(
-      rclcpp::Parameter( "robot_description_kinematics.arm_group.kinematics_solver_timeout", 0.050000000000000003 ) );
+      rclcpp::Parameter( "_kinematics.arm_group.kinematics_solver_timeout", 0.050000000000000003 ) );
   /*node_->declare_parameter<std::string>( "arm_with_gripper.kinematics_solver",
                                          "kdl_kinematics_plugin/KDLKinematicsPlugin" );
-  node_->declare_parameter<double>( "robot_description_kinematics.arm_with_gripper.kinematics_solver_search_resolution",
+  node_->declare_parameter<double>( "_kinematics.arm_with_gripper.kinematics_solver_search_resolution",
                                     0.0050000000000000001 );
-  node_->declare_parameter<double>( "robot_description_kinematics.arm_with_gripper.kinematics_solver_timeout",
+  node_->declare_parameter<double>( "_kinematics.arm_with_gripper.kinematics_solver_timeout",
                                     0.050000000000000003 );*/
 }
 
