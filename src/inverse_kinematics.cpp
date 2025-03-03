@@ -6,20 +6,21 @@
 
 namespace moveit_twist_controller
 {
-bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node,rclcpp::Node::SharedPtr node, const std::string &group_name )
+bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node,
+                              rclcpp::Node::SharedPtr node, const std::string &group_name )
 {
   node_ = node; // NOT SPINNING -> NO CALLBACKS BUT PARAMETERS
   lifecycle_node_ = lifecycle_node;
   RCLCPP_INFO( node_->get_logger(), "Initializing inverse kinematics controller in namespace '%s'.",
                node_->get_namespace() );
-  RCLCPP_INFO( node_->get_logger(), "Group name: %s", group_name.c_str() );
+  RCLCPP_INFO( node_->get_logger(), "Moveit Group name: %s", group_name.c_str() );
   auto robot_description = getParameterFromTopic( "robot_description" );
   auto robot_description_semantic = getParameterFromTopic( "robot_description_semantic" );
   if ( robot_description.empty() || robot_description_semantic.empty() ) {
     RCLCPP_ERROR( node_->get_logger(), "Failed to get robot description." );
     return false;
   }
-  setKinematicParameters();
+  setKinematicParameters(group_name);
   robot_model_loader::RobotModelLoader::Options opt;
   opt.urdf_string_ = robot_description;
   opt.srdf_string = robot_description_semantic;
@@ -33,7 +34,7 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
 
   // load joint model group
   joint_model_group_ = robot_state_->getJointModelGroup( group_name );
-  if ( joint_model_group_ == NULL ) {
+  if ( joint_model_group_ == nullptr ) {
     RCLCPP_WARN_STREAM( node_->get_logger(),
                         "Joint model group '" << group_name << "' does not exist." );
     return false;
@@ -41,8 +42,8 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
   arm_joint_names_ = joint_model_group_->getActiveJointModelNames();
   joint_names_ = robot_model_->getActiveJointModelNames();
   // remove world_virtual_joint
-  if (joint_names_.size()>0 && joint_names_[0] == "world_virtual_joint")
-    joint_names_.erase(joint_names_.begin());
+  if ( joint_names_.size() > 0 && joint_names_[0] == "world_virtual_joint" )
+    joint_names_.erase( joint_names_.begin() );
   // Retrieve solver
   const kinematics::KinematicsBaseConstPtr &solver = joint_model_group_->getSolverInstance();
   if ( !solver ) {
@@ -63,7 +64,7 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
   for ( unsigned int i = 0; i < arm_joint_names_.size(); i++ ) {
     debug << i << ": " << arm_joint_names_[i] << std::endl;
   }
-  RCLCPP_INFO_STREAM( node_->get_logger(), debug.str() );
+  RCLCPP_INFO( node_->get_logger(), debug.str().c_str() );
 
   return true;
 }
@@ -92,7 +93,7 @@ bool InverseKinematics::calcInvKin( const Eigen::Affine3d &pose, const std::vect
         seed.size(), arm_joint_names_.size() );
     return false;
   }
-  geometry_msgs::msg::Pose pose_msg = tf2::toMsg( pose );
+  const geometry_msgs::msg::Pose pose_msg = tf2::toMsg( pose );
 
   moveit_msgs::msg::MoveItErrorCodes error_code;
   solution.resize( arm_joint_names_.size() );
@@ -190,17 +191,14 @@ InverseKinematics::getAsRobotState( const sensor_msgs::msg::JointState &joint_st
 
 std::vector<std::string> InverseKinematics::getGroupJointNames() { return arm_joint_names_; }
 
-std::vector<std::string> InverseKinematics::getAllJointNames() const
-{
-  return joint_names_;
-}
+std::vector<std::string> InverseKinematics::getAllJointNames() const { return joint_names_; }
 
 std::string InverseKinematics::getBaseFrame() const
 {
   return joint_model_group_->getSolverInstance()->getBaseFrame();
 }
 
-std::string InverseKinematics::moveitErrCodeToString( int32_t code )
+std::string InverseKinematics::moveitErrCodeToString( const int32_t code )
 {
   switch ( code ) {
   case moveit_msgs::msg::MoveItErrorCodes::FAILURE:
@@ -212,7 +210,6 @@ std::string InverseKinematics::moveitErrCodeToString( int32_t code )
   default:
     return "";
   }
-  return "";
 }
 
 std::string InverseKinematics::getParameterFromTopic( const std::string &topic ) const
@@ -238,22 +235,41 @@ std::string InverseKinematics::getParameterFromTopic( const std::string &topic )
   return param;
 }
 
-void InverseKinematics::setKinematicParameters() const
+void InverseKinematics::setKinematicParameters( const std::string &group_name ) const
 {
-  // set this params
-  node_->declare_parameter<std::string>( "_kinematics.arm_group.kinematics_solver",
+  // set kinematic parameters -> will be loaded within moveit initialisation
+  // unfortunately, not possible to pass as parameters during initialisation
+  // kinematic solver
+  node_->declare_parameter<std::string>( "_kinematics." + group_name + ".kinematics_solver",
                                          "kdl_kinematics_plugin/KDLKinematicsPlugin" );
-  node_->set_parameter( rclcpp::Parameter( "_kinematics.arm_group.kinematics_solver",
-                                           "kdl_kinematics_plugin/KDLKinematicsPlugin" ) );
-  node_->declare_parameter<double>( "_kinematics.arm_group.kinematics_solver_search_resolution",
-                                    0.0050000000000000001 );
+  std::string kinematics_solver = "kdl_kinematics_plugin/KDLKinematicsPlugin";
+  // if lifecyle node has that parameter, set it
+  if ( lifecycle_node_->has_parameter( "kinematics_solver" ) ) {
+    kinematics_solver = lifecycle_node_->get_parameter( "kinematics_solver" ).as_string();
+  }
   node_->set_parameter(
-      rclcpp::Parameter( "_kinematics.arm_group.kinematics_solver_search_resolution", 0.0050000000000000001 ) );
-  node_->declare_parameter<double>( "_kinematics.arm_group.kinematics_solver_timeout", 0.050000000000000003 );
-  node_->set_parameter(
-      rclcpp::Parameter( "_kinematics.arm_group.kinematics_solver_timeout", 0.050000000000000003 ) );
+      rclcpp::Parameter( "_kinematics." + group_name + ".kinematics_solver", kinematics_solver ) );
 
+  // search resolution
+  node_->declare_parameter<double>(
+      "_kinematics." + group_name + ".kinematics_solver_search_resolution", 0.0050000000000000001 );
+  double search_resolution = 0.0050000000000000001;
+  if ( lifecycle_node_->has_parameter( "kinematics_solver_search_resolution" ) ) {
+    search_resolution =
+        lifecycle_node_->get_parameter( "kinematics_solver_search_resolution" ).as_double();
+  }
+  node_->set_parameter( rclcpp::Parameter(
+      "_kinematics." + group_name + ".kinematics_solver_search_resolution", search_resolution ) );
+
+  // timeout
+  node_->declare_parameter<double>( "_kinematics." + group_name + ".kinematics_solver_timeout",
+                                    0.050000000000000003 );
+  double timeout = 0.050000000000000003;
+  if ( lifecycle_node_->has_parameter( "kinematics_solver_timeout" ) ) {
+    timeout = lifecycle_node_->get_parameter( "kinematics_solver_timeout" ).as_double();
+  }
+  node_->set_parameter(
+      rclcpp::Parameter( "_kinematics." + group_name + ".kinematics_solver_timeout", timeout ) );
 }
-
 
 } // namespace moveit_twist_controller
