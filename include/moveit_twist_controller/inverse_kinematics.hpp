@@ -2,7 +2,7 @@
 #define INVERSE_KINEMATICS_H
 
 #include<rclcpp/rclcpp.hpp>
-
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <moveit/robot_model_loader/robot_model_loader.hpp>
 #include <moveit/robot_model/robot_model.hpp>
 #include <moveit/robot_state/robot_state.hpp>
@@ -19,7 +19,7 @@ public:
   {
   }
 
-  bool init(rclcpp::Node::SharedPtr node, const std::string& group_name);
+  bool init(rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node, rclcpp::Node::SharedPtr node, const std::string& group_name);
   bool calcInvKin(const Eigen::Affine3d &pose, const std::vector<double>& seed, std::vector<double> &solution);
   Eigen::Affine3d getEndEffectorPose(const std::vector<double>& joint_positions ) const;
 
@@ -45,6 +45,7 @@ private:
   std::vector<std::string> arm_joint_names_;
   std::vector<std::string> joint_names_;
   rclcpp::Node::SharedPtr node_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node_;
 };
 
 }
