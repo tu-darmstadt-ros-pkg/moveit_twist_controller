@@ -121,18 +121,11 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     }
 
     // Create publishers and subscriptions.
-    goal_pose_pub_ = get_node()->create_publisher<geometry_msgs::msg::PoseStamped>( "teleop/goal_pose", 10 );
+    goal_pose_pub_ =
+        get_node()->create_publisher<geometry_msgs::msg::PoseStamped>( "teleop/goal_pose", 10 );
     robot_state_pub_ =
         get_node()->create_publisher<moveit_msgs::msg::DisplayRobotState>( "teleop/robot_state", 10 );
     enabled_pub_ = get_node()->create_publisher<std_msgs::msg::Bool>( "teleop/enabled", 10 );
-
-    /*// Subscription for joint states
-    joint_state_sub_ = get_node()->create_subscription<sensor_msgs::msg::JointState>(
-      "/joint_states", 10,
-      [this](const sensor_msgs::msg::JointState::SharedPtr msg)
-      {
-        jointStateCb(msg);
-      });*/
 
     // Twist command subscription
     twist_cmd_sub_ = get_node()->create_subscription<geometry_msgs::msg::TwistStamped>(
@@ -429,83 +422,15 @@ void MoveitTwistController::updateGripper( const rclcpp::Time & /*time*/,
   }
 }
 
-/*void MoveitTwistController::jointStateCb(const sensor_msgs::msg::JointState::SharedPtr joint_state_msg)
-{
-  if (!joint_state_received_)
-  {
-    joint_state_received_ = true;
-    last_state_ = *joint_state_msg;
-  }
-  else
-  {
-    for (size_t joint_idx = 0; joint_idx < joint_state_msg->name.size(); ++joint_idx)
-    {
-      const std::string &joint_name = joint_state_msg->name[joint_idx];
-      auto it = std::find(last_state_.name.begin(), last_state_.name.end(), joint_name);
-      if (it != last_state_.name.end())
-      {
-        size_t idx = static_cast<size_t>(std::distance(last_state_.name.begin(), it));
-        last_state_.position[idx] = joint_state_msg->position[joint_idx];
-        if (joint_state_msg->velocity.size() == joint_state_msg->name.size())
-          last_state_.velocity[idx] = joint_state_msg->velocity[joint_idx];
-      }
-      else
-      {
-        // new joint
-        last_state_.name.push_back(joint_name);
-        last_state_.position.push_back(joint_state_msg->position[joint_idx]);
-        if (joint_state_msg->velocity.size() == joint_state_msg->name.size())
-          last_state_.velocity.push_back(joint_state_msg->velocity[joint_idx]);
-        else
-          last_state_.velocity.push_back(0.0);
-      }
-    }
-  }
-}*/
-
 bool MoveitTwistController::loadGripperJointLimits()
 {
   if ( !ik_.getJointLimits( gripper_joint_name_, gripper_lower_limit_, gripper_upper_limit_ ) ) {
     RCLCPP_WARN( get_node()->get_logger(), "Failed to load gripper joint limits." );
     return false;
   }
+  RCLCPP_INFO( get_node()->get_logger(), "Gripper joint limits: %f %f", gripper_lower_limit_,
+               gripper_upper_limit_ );
   return true;
-  /*std::string robot_description;
-  auto robot_description_sub = get_node()->create_subscription<std_msgs::msg::String>(
-      "robot_description", 10, [&robot_description]( const std_msgs::msg::String::SharedPtr msg ) {
-        robot_description = msg->data;
-      } );
-
-  // Wait for the message to be received with a maximum number of attempts
-  rclcpp::Rate rate( 1 );
-  int max_attempts = 10; // Set the maximum number of attempts
-  int attempts = 0;
-  while ( robot_description.empty() && attempts < max_attempts ) {
-    rate.sleep();
-    attempts++;
-  }
-
-  if ( robot_description.empty() ) {
-    RCLCPP_ERROR( get_node()->get_logger(), "Failed to load robot_description." );
-    return false;
-  }
-
-  urdf::Model urdf_model;
-  if ( !urdf_model.initString( robot_description ) ) {
-    RCLCPP_ERROR( get_node()->get_logger(), "Failed to parse urdf." );
-    return false;
-  }
-
-  auto gripper_joint = urdf_model.getJoint( gripper_joint_name_ );
-  if ( !gripper_joint ) {
-    RCLCPP_ERROR_STREAM( get_node()->get_logger(),
-                         "Could not find gripper joint '" << gripper_joint_name_ << "'." );
-    return false;
-  }
-
-  gripper_upper_limit_ = gripper_joint->limits->upper;
-  gripper_lower_limit_ = gripper_joint->limits->lower;
-  return true;*/
 }
 
 void MoveitTwistController::publishRobotState(

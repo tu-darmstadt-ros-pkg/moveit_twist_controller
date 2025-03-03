@@ -33,7 +33,7 @@ public:
 private:
   std::string moveitErrCodeToString(int32_t code);
   std::string getParameterFromTopic(const std::string& topic ) const;
-  void setKinematicParameters() const;
+  void setKinematicParameters(const std::string& group_name ) const;
 
   robot_model_loader::RobotModelLoaderPtr robot_model_loader_;
   moveit::core::RobotModelPtr robot_model_;
