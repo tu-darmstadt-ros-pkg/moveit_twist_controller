@@ -9,7 +9,7 @@
 #include "controller_interface/controller_interface.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
-#include "sensor_msgs/msg/joy.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "std_srvs/srv/empty.hpp"
 #include "std_srvs/srv/set_bool.hpp"
@@ -49,8 +49,6 @@ private:
   bool computeNewGoalPose(const rclcpp::Duration & period);
   void updateGripper(const rclcpp::Time & time, const rclcpp::Duration & period);
 
-  void twistCmdCb(const geometry_msgs::msg::Twist::SharedPtr twist_msg);
-  void gripperCmdCb(const std_msgs::msg::Float64::SharedPtr float_ptr);
   bool resetPoseCb(const std_srvs::srv::Empty::Request::SharedPtr request,
                    std_srvs::srv::Empty::Response::SharedPtr response);
   bool resetToolCenterCb(const std_srvs::srv::Empty::Request::SharedPtr request,
@@ -61,6 +59,7 @@ private:
                         std_srvs::srv::SetBool::Response::SharedPtr response);
   void publishRobotState(const std::vector<double>& arm_joint_states, const collision_detection::CollisionResult::ContactMap& contact_map_);
   void hideRobotState() const;
+  void setupInterfaces();
   /// Transforms pose to desired frame
   /// Pose has to be relative to base frame
   geometry_msgs::msg::PoseStamped getPoseInFrame(const Eigen::Affine3d& pose,
@@ -93,7 +92,8 @@ private:
   bool joint_state_received_;
   std::vector<double> current_joint_angles_;
   std::vector<double> current_arm_joint_angles;
-  std::vector<int> arm_joint_indices_;
+  std::vector<int> arm_joint_indices_; // indices of arm joints in joint_names_
+  int gripper_index_; // index of gripper in joint_names_
 
   std::string gripper_joint_name_;
   double gripper_upper_limit_;
@@ -106,7 +106,7 @@ private:
   rclcpp::Node::SharedPtr moveit_init_node_;
 
 
-  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_cmd_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_cmd_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gripper_cmd_sub_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_pose_server_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_tool_center_server_;
