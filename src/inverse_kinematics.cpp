@@ -19,13 +19,10 @@ bool InverseKinematics::init( rclcpp::Node::SharedPtr node, const std::string &g
     return false;
   }
   setKinematicParameters();
-  //mirrorKinematicParams(); // hacky as fuck
   robot_model_loader::RobotModelLoader::Options opt;
   opt.urdf_string_ = robot_description;
   opt.srdf_string = robot_description_semantic;
   opt.robot_description = "robot_description";
-  // test if robot_description can be receibed
-  // auto subscriber = node_->create_subscription<std_msgs::msg::String>("robot_description"  )
 
   robot_model_loader_.reset( new robot_model_loader::RobotModelLoader( node_, opt ) );
   robot_model_ = robot_model_loader_->getModel();
@@ -40,8 +37,11 @@ bool InverseKinematics::init( rclcpp::Node::SharedPtr node, const std::string &g
                         "Joint model group '" << group_name << "' does not exist." );
     return false;
   }
-  joint_names_ = joint_model_group_->getActiveJointModelNames();
-
+  arm_joint_names_ = joint_model_group_->getActiveJointModelNames();
+  joint_names_ = robot_model_->getActiveJointModelNames();
+  // remove world_virtual_joint
+  if (joint_names_.size()>0 && joint_names_[0] == "world_virtual_joint")
+    joint_names_.erase(joint_names_.begin());
   // Retrieve solver
   const kinematics::KinematicsBaseConstPtr &solver = joint_model_group_->getSolverInstance();
   if ( !solver ) {
@@ -59,8 +59,8 @@ bool InverseKinematics::init( rclcpp::Node::SharedPtr node, const std::string &g
   debug << "Tip frame: " << tip_frame_ << std::endl;
   debug << "Base frame: " << solver->getBaseFrame() << std::endl;
   debug << "Joints:" << std::endl;
-  for ( unsigned int i = 0; i < joint_names_.size(); i++ ) {
-    debug << i << ": " << joint_names_[i] << std::endl;
+  for ( unsigned int i = 0; i < arm_joint_names_.size(); i++ ) {
+    debug << i << ": " << arm_joint_names_[i] << std::endl;
   }
   RCLCPP_INFO_STREAM( node_->get_logger(), debug.str() );
 
@@ -84,17 +84,17 @@ bool InverseKinematics::getJointLimits( const std::string &joint_name, double &l
 bool InverseKinematics::calcInvKin( const Eigen::Affine3d &pose, const std::vector<double> &seed,
                                     std::vector<double> &solution )
 {
-  if ( seed.size() != joint_names_.size() ) {
+  if ( seed.size() != arm_joint_names_.size() ) {
     RCLCPP_INFO(
         node_->get_logger(),
         "[InverseKinematics::calcInvKin] Seed size (%lu) does not match number of joints (%lu)",
-        seed.size(), joint_names_.size() );
+        seed.size(), arm_joint_names_.size() );
     return false;
   }
   geometry_msgs::msg::Pose pose_msg = tf2::toMsg( pose );
 
   moveit_msgs::msg::MoveItErrorCodes error_code;
-  solution.resize( joint_names_.size() );
+  solution.resize( arm_joint_names_.size() );
   if ( !joint_model_group_->getSolverInstance()->searchPositionIK( pose_msg, seed, 0.01, solution,
                                                                    error_code ) ) {
     RCLCPP_WARN_STREAM( node_->get_logger(),
@@ -187,11 +187,11 @@ InverseKinematics::getAsRobotState( const sensor_msgs::msg::JointState &joint_st
   return *robot_state_;
 }
 
-std::vector<std::string> InverseKinematics::getGroupJointNames() { return joint_names_; }
+std::vector<std::string> InverseKinematics::getGroupJointNames() { return arm_joint_names_; }
 
 std::vector<std::string> InverseKinematics::getAllJointNames() const
 {
-  return robot_model_->getJointModelNames();
+  return joint_names_;
 }
 
 std::string InverseKinematics::getBaseFrame() const
@@ -237,7 +237,7 @@ std::string InverseKinematics::getParameterFromTopic( const std::string &topic )
   return param;
 }
 
-void InverseKinematics::setKinematicParameters()
+void InverseKinematics::setKinematicParameters() const
 {
   // set this params
   node_->declare_parameter<std::string>( "_kinematics.arm_group.kinematics_solver",
@@ -251,105 +251,8 @@ void InverseKinematics::setKinematicParameters()
   node_->declare_parameter<double>( "_kinematics.arm_group.kinematics_solver_timeout", 0.050000000000000003 );
   node_->set_parameter(
       rclcpp::Parameter( "_kinematics.arm_group.kinematics_solver_timeout", 0.050000000000000003 ) );
-  /*node_->declare_parameter<std::string>( "arm_with_gripper.kinematics_solver",
-                                         "kdl_kinematics_plugin/KDLKinematicsPlugin" );
-  node_->declare_parameter<double>( "_kinematics.arm_with_gripper.kinematics_solver_search_resolution",
-                                    0.0050000000000000001 );
-  node_->declare_parameter<double>( "_kinematics.arm_with_gripper.kinematics_solver_timeout",
-                                    0.050000000000000003 );*/
+
 }
 
-void InverseKinematics::mirrorKinematicParams()
-{
-  rclcpp::Node::SharedPtr node = std::make_shared<rclcpp::Node>( "temp", node_->get_namespace() );
-  RCLCPP_INFO( node_->get_logger(), "Mirroring 'kinematic' parameters from move_group." );
-  // Create a synchronous parameter client to talk to the move_group node_
-  auto param_client = std::make_shared<rclcpp::SyncParametersClient>( node, "move_group" );
-  RCLCPP_INFO( node_->get_logger(), "Waiting for the move_group parameter service..." );
-  /*// Wait for the remote service to be available
-  while (!param_client->wait_for_service(std::chrono::seconds(2))) {
-    if (!rclcpp::ok()) {
-      RCLCPP_ERROR(node_->get_logger(),
-                   "Interrupted while waiting for the move_group parameter service.");
-      return;
-    }
-    RCLCPP_INFO(node_->get_logger(),
-                "Waiting for the move_group parameter service...");
-  }*/
-  // List all parameters on the move_group node_ (up to 1000 in this example)
-  auto list_result = param_client->list_parameters( {}, 1000 );
-  RCLCPP_INFO( node_->get_logger(), "Found %d parameters on move_group.",
-               static_cast<int>( list_result.names.size() ) );
-  // For each parameter, check if its name contains "kinematic"
-  for ( const auto &param_name : list_result.names ) {
-    if ( param_name.find( "kinematic" ) != std::string::npos ) {
-      // Retrieve the parameter value from move_group
-      auto remote_value = param_client->get_parameter( param_name, rclcpp::ParameterValue() );
-      auto param_type = remote_value.get_type();
-      RCLCPP_INFO( node_->get_logger(), "Retrieved parameter '%s' from move_group.",
-                   param_name.c_str() );
-
-      switch ( param_type ) {
-      case rclcpp::ParameterType::PARAMETER_BOOL: {
-        bool val = remote_value.get<bool>();
-        node_->declare_parameter<bool>( param_name, val );
-        node_->set_parameter( rclcpp::Parameter( param_name, val ) );
-        break;
-      }
-      case rclcpp::ParameterType::PARAMETER_INTEGER: {
-        int64_t val = remote_value.get<int64_t>();
-        node_->declare_parameter<int64_t>( param_name, val );
-        node_->set_parameter( rclcpp::Parameter( param_name, val ) );
-        break;
-      }
-      case rclcpp::ParameterType::PARAMETER_DOUBLE: {
-        double val = remote_value.get<double>();
-        node_->declare_parameter<double>( param_name, val );
-        node_->set_parameter( rclcpp::Parameter( param_name, val ) );
-        RCLCPP_INFO( node_->get_logger(), "Set parameter '%s' to '%f'.", param_name.c_str(), val );
-        break;
-      }
-      case rclcpp::ParameterType::PARAMETER_STRING: {
-        std::string val = remote_value.get<std::string>();
-        node_->declare_parameter<std::string>( param_name, val );
-        node_->set_parameter( rclcpp::Parameter( param_name, val ) );
-        RCLCPP_INFO( node_->get_logger(), "Set parameter '%s' to '%s'.", param_name.c_str(),
-                     val.c_str() );
-        break;
-      }
-      case rclcpp::ParameterType::PARAMETER_BOOL_ARRAY: {
-        auto val = remote_value.get<std::vector<bool>>();
-        node_->declare_parameter<std::vector<bool>>( param_name, val );
-        node_->set_parameter( rclcpp::Parameter( param_name, val ) );
-        break;
-      }
-      case rclcpp::ParameterType::PARAMETER_INTEGER_ARRAY: {
-        auto val = remote_value.get<std::vector<int64_t>>();
-        node_->declare_parameter<std::vector<int64_t>>( param_name, val );
-        node_->set_parameter( rclcpp::Parameter( param_name, val ) );
-        break;
-      }
-      case rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY: {
-        auto val = remote_value.get<std::vector<double>>();
-        node_->declare_parameter<std::vector<double>>( param_name, val );
-        node_->set_parameter( rclcpp::Parameter( param_name, val ) );
-        break;
-      }
-      case rclcpp::ParameterType::PARAMETER_STRING_ARRAY: {
-        auto val = remote_value.get<std::vector<std::string>>();
-        node_->declare_parameter<std::vector<std::string>>( param_name, val );
-        node_->set_parameter( rclcpp::Parameter( param_name, val ) );
-        break;
-      }
-      default: {
-        RCLCPP_WARN( node_->get_logger(), "Parameter '%s' has an unhandled type (%d). Skipping.",
-                     param_name.c_str(), static_cast<int>( param_type ) );
-        break;
-      }
-      } // end switch
-    } // end if name contains "kinematic"
-  } // end for
-  RCLCPP_INFO( node_->get_logger(), "Done mirroring 'kinematic' parameters from move_group." );
-}
 
 } // namespace moveit_twist_controller
