@@ -20,6 +20,7 @@ controller_interface::InterfaceConfiguration MoveitTwistController::command_inte
 {
   controller_interface::InterfaceConfiguration config;
   config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
+  if (arm_joint_names_.empty()) RCLCPP_ERROR( get_node()->get_logger(), "Arm joint names are empty in command_interface_configuration");
   // all arm joints
   for ( const auto &joint_name : arm_joint_names_ ) {
     config.names.push_back( joint_name + "/position" );
@@ -47,7 +48,6 @@ controller_interface::InterfaceConfiguration MoveitTwistController::state_interf
 controller_interface::CallbackReturn MoveitTwistController::on_init()
 {
   try {
-      get_node()->declare_parameter<std::string>( "test", "" );
 
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>( get_node()->get_clock() );
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>( *tf_buffer_ );
@@ -264,7 +264,7 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
     const auto &joint_name = joint_names_[i];
     auto it = std::find_if(
         state_interfaces_.begin(), state_interfaces_.end(), [&joint_name]( const auto &iface ) {
-          return iface.get_name() == joint_name && iface.get_interface_name() == "position";
+          return iface.get_name() == joint_name + "/position";
         } );
     if ( it != state_interfaces_.end() ) {
       current_joint_angles_[i] = it->get_value();
@@ -322,14 +322,15 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
   bool success = true;
   // Write next goal state to command_interfaces_
   for ( size_t i = 0; i < arm_joint_names_.size(); ++i ) {
-    const auto &joint_name = joint_names_[i];
+    const auto &joint_name = arm_joint_names_[i];
     auto it = std::find_if(
         command_interfaces_.begin(), command_interfaces_.end(), [&joint_name]( const auto &iface ) {
-          return iface.get_name() == joint_name && iface.get_interface_name() == "position";
+          return iface.get_name() == joint_name+ "/position";
         } );
-    if ( it != command_interfaces_.end() ) {
+    if ( it != command_interfaces_.end() )
       success &= it->set_value( goal_state_[i] );
-    }
+    else
+      success = false;
   }
   if ( !success )
     RCLCPP_WARN( get_node()->get_logger(), "Failed to write next goal state to hardware." );
@@ -406,14 +407,20 @@ void MoveitTwistController::updateGripper( const rclcpp::Time & /*time*/,
   // Write gripper command
   auto it = std::find_if(
       command_interfaces_.begin(), command_interfaces_.end(), [this]( const auto &iface ) {
-        return iface.get_name() == gripper_joint_name_ && iface.get_interface_name() == "position";
+        return iface.get_name() == gripper_joint_name_ + "/position";
       } );
   if ( it != command_interfaces_.end() ) {
     RCLCPP_INFO( get_node()->get_logger(), "Gripper pos: %f", gripper_pos_ );
     success = it->set_value( gripper_pos_ );
   }
-  if ( !success )
+  if ( !success ) {
     RCLCPP_WARN( get_node()->get_logger(), "Failed to write gripper command to hardware." );
+    // izterate all command interfaces and print their names and interface names
+    for (const auto &iface : command_interfaces_) {
+      RCLCPP_INFO( get_node()->get_logger(), "Command interface name: %s, interface name: %s", iface.get_name().c_str(), iface.get_interface_name().c_str());
+    }
+  }
+
 }
 
 void MoveitTwistController::twistCmdCb( const geometry_msgs::msg::Twist::SharedPtr twist_msg )
