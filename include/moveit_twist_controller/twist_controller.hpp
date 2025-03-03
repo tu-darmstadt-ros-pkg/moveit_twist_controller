@@ -103,10 +103,7 @@ private:
   bool hold_pose_;
   geometry_msgs::msg::PoseStamped hold_goal_pose_;
 
-  std::thread status_thread_;
-  rclcpp::Executor::SharedPtr executor_;
-  rclcpp::Node::SharedPtr status_node_;
-
+  rclcpp::Node::SharedPtr moveit_init_node_;
 
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_cmd_sub_;

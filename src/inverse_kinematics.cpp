@@ -6,9 +6,10 @@
 
 namespace moveit_twist_controller
 {
-bool InverseKinematics::init( rclcpp::Node::SharedPtr node, const std::string &group_name )
+bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node,rclcpp::Node::SharedPtr node, const std::string &group_name )
 {
-  node_ = node;
+  node_ = node; // NOT SPINNING -> NO CALLBACKS BUT PARAMETERS
+  lifecycle_node_ = lifecycle_node;
   RCLCPP_INFO( node_->get_logger(), "Initializing inverse kinematics controller in namespace '%s'.",
                node_->get_namespace() );
   RCLCPP_INFO( node_->get_logger(), "Group name: %s", group_name.c_str() );
@@ -219,7 +220,7 @@ std::string InverseKinematics::getParameterFromTopic( const std::string &topic )
   std::string param;
   auto qos = rclcpp::QoS( 10 );
   qos.transient_local();
-  auto subscription = node_->create_subscription<std_msgs::msg::String>(
+  auto subscription = lifecycle_node_->create_subscription<std_msgs::msg::String>(
       topic, qos, [this, topic, &param]( const std_msgs::msg::String::SharedPtr msg ) {
         RCLCPP_INFO( node_->get_logger(), "Received Param msg on topic %s", topic.c_str() );
         param = msg->data;
