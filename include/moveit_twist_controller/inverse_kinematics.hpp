@@ -33,8 +33,7 @@ public:
 private:
   std::string moveitErrCodeToString(int32_t code);
   std::string getParameterFromTopic(const std::string& topic ) const;
-  void mirrorKinematicParams();
-  void setKinematicParameters();
+  void setKinematicParameters() const;
 
   robot_model_loader::RobotModelLoaderPtr robot_model_loader_;
   moveit::core::RobotModelPtr robot_model_;
@@ -43,6 +42,7 @@ private:
   const moveit::core::JointModelGroup* joint_model_group_;
 
   std::string tip_frame_;
+  std::vector<std::string> arm_joint_names_;
   std::vector<std::string> joint_names_;
   rclcpp::Node::SharedPtr node_;
 };

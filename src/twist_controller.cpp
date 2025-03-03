@@ -26,7 +26,6 @@ controller_interface::InterfaceConfiguration MoveitTwistController::command_inte
   }
   // The gripper joint
   config.names.push_back( gripper_joint_name_ + std::string( "/position" ) );
-
   return config;
 }
 
@@ -86,11 +85,38 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     // Populate joint_names_ from the IK solver
     joint_names_ = ik_.getAllJointNames();
     arm_joint_names_ = ik_.getGroupJointNames();
-    goal_state_.resize( joint_names_.size() );
+    // extract the arm joint indices
+    arm_joint_indices_.resize( arm_joint_names_.size() );
+    for ( size_t i = 0; i < arm_joint_names_.size(); ++i ) {
+      auto it = std::find( joint_names_.begin(), joint_names_.end(), arm_joint_names_[i] );
+      if ( it != joint_names_.end() ) {
+        arm_joint_indices_[i] = static_cast<int>( std::distance( joint_names_.begin(), it ) );
+      } else {
+        RCLCPP_ERROR( get_node()->get_logger(), "Joint %s not found in joint_names_",
+                      arm_joint_names_[i].c_str() );
+        return controller_interface::CallbackReturn::ERROR;
+      }
+    }
+    // print joint names and arm joint names
+    std::stringstream debug;
+    debug << "All joints:" << std::endl;
+    for ( const auto &joint_name : joint_names_ ) {
+      debug << joint_name << std::endl;
+    }
+    debug << "Arm joints:" << std::endl;
+    for ( const auto &joint_name : arm_joint_names_ ) {
+      debug << joint_name << std::endl;
+    }
+    RCLCPP_INFO( get_node()->get_logger(), "%s", debug.str().c_str() );
+    goal_state_.resize( arm_joint_names_.size() );
     current_joint_angles_.resize( joint_names_.size() );
-    previous_goal_state_.resize( joint_names_.size() );
+    current_arm_joint_angles.resize( arm_joint_names_.size() );
+    previous_goal_state_.resize( arm_joint_names_.size() );
+    RCLCPP_INFO( get_node()->get_logger(), "goal_state_ size: %lu", goal_state_.size() );
+    RCLCPP_INFO( get_node()->get_logger(), "previous_goal_state_ size: %lu", previous_goal_state_.size() );
 
     gripper_joint_name_ = params.gripper_joint_name;
+    RCLCPP_INFO( get_node()->get_logger(), "Gripper joint: %s", gripper_joint_name_.c_str() );
     if ( !loadGripperJointLimits() ) {
       return controller_interface::CallbackReturn::ERROR;
     }
@@ -198,9 +224,13 @@ MoveitTwistController::on_activate( const rclcpp_lifecycle::State & /*previous_s
 
   initialized_ = true;
   enabled_ = true;
-  publishStatus();
 
+  // activate publishers
+  goal_pose_pub_->on_activate();
+  robot_state_pub_->on_activate();
+  enabled_pub_->on_activate();
   RCLCPP_INFO( get_node()->get_logger(), "Joystick Control started." );
+  publishStatus();
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -214,6 +244,11 @@ MoveitTwistController::on_deactivate( const rclcpp_lifecycle::State & /*previous
   enabled_ = false;
   publishStatus();
   hideRobotState();
+
+  // deactivate publishers
+  goal_pose_pub_->on_deactivate();
+  robot_state_pub_->on_deactivate();
+  enabled_pub_->on_deactivate();
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -235,6 +270,10 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
       current_joint_angles_[i] = it->get_value();
     }
   }
+  // extract arm joint angles
+  for ( size_t i = 0; i < arm_joint_indices_.size(); ++i ) {
+      current_arm_joint_angles[i] = current_joint_angles_[arm_joint_indices_[i]];
+  }
 
   // Compute next state
   updateArm( time, period );
@@ -247,7 +286,6 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
   geometry_msgs::msg::PoseStamped goal_pose_msg;
   goal_pose_msg.header.frame_id = ik_.getBaseFrame();
   goal_pose_msg.pose = tf2::toMsg( tool_goal_pose_ );
-  // We'll set stamp = time
   goal_pose_msg.header.stamp = time;
   goal_pose_pub_->publish( goal_pose_msg );
 
@@ -265,15 +303,20 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
   // Compute IK
   if ( ik_.calcInvKin( ee_goal_pose_, previous_goal_state_, goal_state_ ) ) {
     contact_map_.clear();
-    bool collision_free = ik_.isCollisionFree( last_state_, goal_state_, contact_map_ );
+    sensor_msgs::msg::JointState joint_state;
+    joint_state.name = joint_names_;
+    joint_state.position = current_joint_angles_;
+    bool collision_free = ik_.isCollisionFree( joint_state, goal_state_, contact_map_ );
     if ( !collision_free ) {
       ee_goal_pose_ = old_goal;
       goal_state_ = previous_goal_state_;
+      RCLCPP_WARN( get_node()->get_logger(), "Collision detected." );
     }
   } else {
     // IK failed
     ee_goal_pose_ = old_goal;
     goal_state_ = previous_goal_state_;
+    RCLCPP_WARN( get_node()->get_logger(), "IK failed." );
   }
 
   bool success = true;
@@ -290,14 +333,17 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
   }
   if ( !success )
     RCLCPP_WARN( get_node()->get_logger(), "Failed to write next goal state to hardware." );
+  else
+    RCLCPP_INFO( get_node()->get_logger(), "Set Goal state to hardware: %f %f %f %f %f %f", goal_state_[0],
+                 goal_state_[1], goal_state_[2], goal_state_[3], goal_state_[4], goal_state_[5]);
 }
 
 bool MoveitTwistController::computeNewGoalPose( const rclcpp::Duration &period )
 {
   if ( reset_pose_ ) {
     // Reset end-effector goal
-    previous_goal_state_ = current_joint_angles_;
-    ee_goal_pose_ = ik_.getEndEffectorPose( current_joint_angles_ );
+    previous_goal_state_ = current_arm_joint_angles;
+    ee_goal_pose_ = ik_.getEndEffectorPose( current_arm_joint_angles );
     tool_goal_pose_ = ee_goal_pose_ * tool_center_offset_;
     reset_pose_ = false;
     return true;
@@ -333,11 +379,11 @@ bool MoveitTwistController::computeNewGoalPose( const rclcpp::Duration &period )
     return false;
   }
 
-  auto rot = rpyToRot( period.seconds() * twist_.angular );
+  const auto rot = rpyToRot( period.seconds() * twist_.angular );
   Eigen::Affine3d twist_transform( rot );
   twist_transform.translation() = period.seconds() * twist_.linear;
 
-  Eigen::Affine3d tool_center_movement = tool_center_offset_ * twist_transform;
+  const Eigen::Affine3d tool_center_movement = tool_center_offset_ * twist_transform;
   tool_goal_pose_ = ee_goal_pose_ * tool_center_movement;
 
   if ( !move_tool_center_ ) {
@@ -363,6 +409,7 @@ void MoveitTwistController::updateGripper( const rclcpp::Time & /*time*/,
         return iface.get_name() == gripper_joint_name_ && iface.get_interface_name() == "position";
       } );
   if ( it != command_interfaces_.end() ) {
+    RCLCPP_INFO( get_node()->get_logger(), "Gripper pos: %f", gripper_pos_ );
     success = it->set_value( gripper_pos_ );
   }
   if ( !success )
@@ -467,7 +514,10 @@ void MoveitTwistController::publishRobotState(
     const std::vector<double> &arm_joint_states,
     const collision_detection::CollisionResult::ContactMap &contact_map )
 {
-  moveit::core::RobotState robot_state = ik_.getAsRobotState( last_state_, arm_joint_states );
+  sensor_msgs::msg::JointState joint_state;
+  joint_state.name = joint_names_;
+  joint_state.position = current_joint_angles_;
+  moveit::core::RobotState robot_state = ik_.getAsRobotState( joint_state, arm_joint_states ); // TODO: refcator
 
   // transform the base
   geometry_msgs::msg::TransformStamped transform_stamped;

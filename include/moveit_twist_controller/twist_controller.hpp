@@ -92,7 +92,8 @@ private:
   std::vector<std::string> arm_joint_names_;
   bool joint_state_received_;
   std::vector<double> current_joint_angles_;
-  sensor_msgs::msg::JointState last_state_;
+  std::vector<double> current_arm_joint_angles;
+  std::vector<int> arm_joint_indices_;
 
   std::string gripper_joint_name_;
   double gripper_upper_limit_;
@@ -105,6 +106,8 @@ private:
   std::thread status_thread_;
   rclcpp::Executor::SharedPtr executor_;
   rclcpp::Node::SharedPtr status_node_;
+
+
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_cmd_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gripper_cmd_sub_;
