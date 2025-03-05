@@ -124,17 +124,16 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     if ( !loadGripperJointLimits() ) {
       return controller_interface::CallbackReturn::ERROR;
     }
-    std::string teleop_ns = "teleop";
     // Create publishers and subscriptions.
     goal_pose_pub_ =
-        get_node()->create_publisher<geometry_msgs::msg::PoseStamped>( teleop_ns + "/goal_pose", 10 );
+        get_node()->create_publisher<geometry_msgs::msg::PoseStamped>(  "~/goal_pose", 10 );
     robot_state_pub_ =
-        get_node()->create_publisher<moveit_msgs::msg::DisplayRobotState>( teleop_ns + "/robot_state", 10 );
-    enabled_pub_ = get_node()->create_publisher<std_msgs::msg::Bool>( teleop_ns + "/enabled", 10 );
+        get_node()->create_publisher<moveit_msgs::msg::DisplayRobotState>(  "~/robot_state", 10 );
+    enabled_pub_ = get_node()->create_publisher<std_msgs::msg::Bool>(  "~/enabled", 10 );
 
     // Twist command subscription
     twist_cmd_sub_ = get_node()->create_subscription<geometry_msgs::msg::TwistStamped>(
-        teleop_ns + "/eef_cmd", 10, [this]( const geometry_msgs::msg::TwistStamped::SharedPtr twist_msg ) {
+         "~/eef_cmd", 10, [this]( const geometry_msgs::msg::TwistStamped::SharedPtr twist_msg ) {
           twist_.linear.x() = twist_msg->twist.linear.x; // TODO: store frame
           twist_.linear.y() = twist_msg->twist.linear.y;
           twist_.linear.z() = twist_msg->twist.linear.z;
@@ -145,14 +144,14 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
 
     // Gripper speed subscription
     gripper_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64>(
-        teleop_ns + "/gripper_cmd", 10, [this]( const std_msgs::msg::Float64::SharedPtr msg ) {
+         "~/gripper_cmd", 10, [this]( const std_msgs::msg::Float64::SharedPtr msg ) {
           gripper_speed_ = msg->data;
           ;
         } );
 
     // Services
     reset_pose_server_ = get_node()->create_service<std_srvs::srv::Empty>(
-        teleop_ns + "/reset_pose", [this]( const std::shared_ptr<std_srvs::srv::Empty::Request> request,
+         "~/reset_pose", [this]( const std::shared_ptr<std_srvs::srv::Empty::Request> request,
                               std::shared_ptr<std_srvs::srv::Empty::Response> response ) {
           (void)request;
           (void)response;
@@ -161,7 +160,7 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
         } );
 
     reset_tool_center_server_ = get_node()->create_service<std_srvs::srv::Empty>(
-        teleop_ns + "/reset_tool_center", [this]( const std::shared_ptr<std_srvs::srv::Empty::Request> request,
+         "~/reset_tool_center", [this]( const std::shared_ptr<std_srvs::srv::Empty::Request> request,
                                      std::shared_ptr<std_srvs::srv::Empty::Response> response ) {
           (void)request;
           (void)response;
@@ -169,7 +168,7 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
           return true;
         } );
     hold_pose_server_ = get_node()->create_service<std_srvs::srv::SetBool>(
-        teleop_ns + "/hold_mode", [this]( const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+         "~/hold_mode", [this]( const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                              std::shared_ptr<std_srvs::srv::SetBool::Response> response ) {
           if ( hold_pose_ != request->data ) {
             hold_pose_ = request->data;
@@ -184,7 +183,7 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
         } );
 
     move_tool_center_server_ = get_node()->create_service<std_srvs::srv::SetBool>(
-        teleop_ns + "/move_tool_center", [this]( const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+         "~/move_tool_center", [this]( const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                                     std::shared_ptr<std_srvs::srv::SetBool::Response> response ) {
           move_tool_center_ = request->data;
           response->success = true;
