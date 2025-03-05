@@ -196,13 +196,12 @@ std::string InverseKinematics::getParameterFromTopic( const std::string &topic )
   // wait for the message to be received
   rclcpp::Rate rate( 3 );
   int attempt = 0;
-  int max_attempt = 20;
-  while ( param.empty() && attempt < max_attempt ) {
+  while ( param.empty()  ) {
     rate.sleep();
     attempt++;
+    if (attempt % 10 == 0)
+      RCLCPP_INFO( node_->get_logger(), "Waiting for param on topic %s", topic.c_str() );
   }
-  if ( param.empty() )
-    RCLCPP_WARN( node_->get_logger(), "Failed to receive param on topic %s", topic.c_str() );
   return param;
 }
 
