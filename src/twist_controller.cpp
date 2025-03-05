@@ -367,17 +367,15 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     }
   }
 
-  double factor = 1.0;
-  if (max_velocity_factor > 1.0) {
-    factor = max_velocity_factor;
+  if (max_velocity_factor>1.0) {
+    RCLCPP_WARN( get_node()->get_logger(), "Max velocity factor: %f. Rejected goal state.", max_velocity_factor );
     reset_pose_ = true;
-    RCLCPP_WARN( get_node()->get_logger(), "Max change in joint angles is > 1.0. Limiting Joint Velocities." );
-  }
-  for ( size_t i=0; i<goal_state_.size(); ++i ) {
-    goal_state_[i] = previous_goal_state_[i] + computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] )/factor;
-    // make sure in -pi,pi
-    /*if (goal_state_[i] >= M_PI) goal_state_[i] -= 2.0 * M_PI;
-    else if (goal_state_[i] < -M_PI) goal_state_[i] += 2.0 * M_PI;*/
+    goal_state_ = previous_goal_state_;
+  }else {
+    // avoid jumps in joint angles especially in the continuous joints!!
+    for ( size_t i=0; i<goal_state_.size(); ++i ) {
+      goal_state_[i] = previous_goal_state_[i] + computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] );
+    }
   }
 
 
