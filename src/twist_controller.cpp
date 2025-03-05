@@ -314,10 +314,21 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
   return controller_interface::return_type::OK;
 }
 
-double MoveitTwistController::computeAbsJointAngleDiff( double angle_1, double angle_2 ) const
+double MoveitTwistController::computeJointAngleDiff( const double angle_1,
+                                                        const double angle_2 ) const
 {
-  // max diff is pi
-  return fmod(std::abs( angle_1 - angle_2 ),  M_PI );
+  // First compute the naive difference
+  double diff = angle_2 - angle_1;
+
+  // Normalize the difference into the range [-pi, pi]
+  diff = fmod(diff, 2.0 * M_PI);
+  if (diff > M_PI) {
+    diff -= 2.0 * M_PI;
+  } else if (diff < -M_PI) {
+    diff += 2.0 * M_PI;        // shift from [-2*pi, -pi) to [0, pi)
+  }
+
+  return diff;
 }
 
 void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclcpp::Duration &period )
@@ -346,25 +357,29 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     goal_state_ = previous_goal_state_;
     RCLCPP_WARN( get_node()->get_logger(), "IK failed." );
   }
-  // define a lambda function that computes the difference
   // Make sure that the change in joint angles is not too large -> velocity limits
   double max_velocity_factor = 0;
   for ( size_t i=0; i<goal_state_.size(); ++i ) {
-    const double angle_diff = computeAbsJointAngleDiff( goal_state_[i], previous_goal_state_[i] );
+    const double angle_diff = std::abs(computeJointAngleDiff(  previous_goal_state_[i], goal_state_[i] ));
     max_velocity_factor = std::max( max_velocity_factor, angle_diff/(joint_velocity_limits_[i]*period.seconds()) );
     if (angle_diff/(joint_velocity_limits_[i]*period.seconds())>1.0) {
       RCLCPP_WARN( get_node()->get_logger(), "Joint %s: Max change in joint angles is > 1.0 Old State: %f, New State: %f, angle diff %f", arm_joint_names_[i].c_str(), previous_goal_state_[i], goal_state_[i], angle_diff );
-
     }
   }
-  if (max_velocity_factor>1.0) {
-    RCLCPP_WARN(  get_node()->get_logger(), "Max change in joint angles is %f. Rejecting new goal state.", max_velocity_factor );
-    goal_state_ = previous_goal_state_;
-    /*RCLCPP_WARN( get_node()->get_logger(), "Max change in joint angles is %f. Limiting to 1.0", max_velocity_factor );
-    for ( size_t i=0; i<goal_state_.size(); ++i ) {
-      goal_state_[i] =previous_goal_state_[i] + (goal_state_[i] - previous_goal_state_[i])/max_velocity_factor;
-    }*/
+
+  double factor = 1.0;
+  if (max_velocity_factor > 1.0) {
+    factor = max_velocity_factor;
+    reset_pose_ = true;
+    RCLCPP_WARN( get_node()->get_logger(), "Max change in joint angles is > 1.0. Limiting Joint Velocities." );
   }
+  for ( size_t i=0; i<goal_state_.size(); ++i ) {
+    goal_state_[i] = previous_goal_state_[i] + computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] )/factor;
+    // make sure in -pi,pi
+    /*if (goal_state_[i] >= M_PI) goal_state_[i] -= 2.0 * M_PI;
+    else if (goal_state_[i] < -M_PI) goal_state_[i] += 2.0 * M_PI;*/
+  }
+
 
   bool success = true;
   // Write next goal state to command_interfaces_
