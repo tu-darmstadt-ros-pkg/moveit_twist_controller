@@ -30,10 +30,16 @@ public:
   std::vector<std::string> getAllJointNames() const;
   std::string getBaseFrame() const;
   bool getJointLimits(const std::string& joint_name, double& lower, double& upper) const;
+  std::vector< double> getJointVelocityLimits() const;
 private:
   std::string moveitErrCodeToString(int32_t code);
   std::string getParameterFromTopic(const std::string& topic ) const;
   void setKinematicParameters(const std::string& group_name ) const;
+  template <typename T>
+void declareAndSetMoveitParameter(
+    const std::string &param_name,
+    const std::string &group_name,
+    const T &default_value) const;
 
   robot_model_loader::RobotModelLoaderPtr robot_model_loader_;
   moveit::core::RobotModelPtr robot_model_;
@@ -47,6 +53,22 @@ private:
   rclcpp::Node::SharedPtr node_;
   rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node_;
 };
+
+template <typename T>
+void InverseKinematics::declareAndSetMoveitParameter(
+    const std::string &param_name,
+    const std::string &group_name,
+    const T &default_value) const
+{
+  // declare the parameter with a default value on lifecycle node
+  lifecycle_node_->declare_parameter<T>(param_name, default_value);
+  T value = lifecycle_node_->get_parameter(param_name).get_value<T>();
+
+  std::string moveit_param_name = "_kinematics." + group_name + "." + param_name;
+  // declare and set the parameter on the node
+  node_->declare_parameter<T>(moveit_param_name, value);
+  node_->set_parameter(rclcpp::Parameter(moveit_param_name, value));
+}
 
 }
 #endif

@@ -60,6 +60,7 @@ private:
   void publishRobotState(const std::vector<double>& arm_joint_states, const collision_detection::CollisionResult::ContactMap& contact_map_);
   void hideRobotState() const;
   void setupInterfaces();
+  double computeAbsJointAngleDiff(double angle_1, double angle_2) const;
   /// Transforms pose to desired frame
   /// Pose has to be relative to base frame
   geometry_msgs::msg::PoseStamped getPoseInFrame(const Eigen::Affine3d& pose,
@@ -86,6 +87,7 @@ private:
   Twist twist_;
   double gripper_pos_;
   double gripper_speed_;
+  std::vector<double> joint_velocity_limits_;
 
   std::vector<std::string> joint_names_;
   std::vector<std::string> arm_joint_names_;

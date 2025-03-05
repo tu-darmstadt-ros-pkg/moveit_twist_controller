@@ -4,7 +4,7 @@
   <version>0.0.0</version>
   <description>The moveit_twist_controller package</description>
 
-  <maintainer email="oehler@sim.tu-darmstadt.de">Martin Oehler</maintainer>
+  <maintainer email="schmidt@sim.tu-darmstadt.de">Aljoscha Schmidt</maintainer>
 
   <license>TODO</license>
 
@@ -12,7 +12,6 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>hector_joy_tcp_teleop</depend>
   <depend>moveit_core</depend>
   <depend>moveit_ros_planning</depend>
   <depend>sensor_msgs</depend>
@@ -27,6 +26,8 @@
   <depend>pluginlib</depend>
   <depend>rclcpp_lifecycle</depend>
   <depend>generate_parameter_library</depend>
+
+  <exec_depend>pick_ik</exec_depend>
 
   <test_depend>ament_cmake_gmock</test_depend>
   <test_depend>controller_manager</test_depend>
