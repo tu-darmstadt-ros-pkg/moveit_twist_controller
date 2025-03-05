@@ -9,8 +9,8 @@ namespace moveit_twist_controller
 bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node,
                               rclcpp::Node::SharedPtr node, const std::string &group_name )
 {
-  node_ = node; // NOT SPINNING -> NO CALLBACKS BUT PARAMETERS
-  lifecycle_node_ = lifecycle_node;
+  node_ = node; // NOT SPINNING -> NO CALLBACKS BUT PARAMETERS SHOULD WORK
+  lifecycle_node_ = lifecycle_node; // SPINNING -> CALLBACKS WORK
   RCLCPP_INFO( node_->get_logger(), "Initializing inverse kinematics controller in namespace '%s'.",
                node_->get_namespace() );
   RCLCPP_INFO( node_->get_logger(), "Moveit Group name: %s", group_name.c_str() );
@@ -44,6 +44,7 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
   // remove world_virtual_joint
   if ( joint_names_.size() > 0 && joint_names_[0] == "world_virtual_joint" )
     joint_names_.erase( joint_names_.begin() );
+
   // Retrieve solver
   const kinematics::KinematicsBaseConstPtr &solver = joint_model_group_->getSolverInstance();
   if ( !solver ) {
@@ -52,6 +53,7 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
                   joint_model_group_->getName().c_str() );
     return false;
   }
+  RCLCPP_INFO( node_->get_logger(), "IK solver: %s", typeid(*solver).name() );
   tip_frame_ = solver->getTipFrame();
 
   // Debug output
@@ -107,37 +109,6 @@ bool InverseKinematics::calcInvKin( const Eigen::Affine3d &pose, const std::vect
                             << moveitErrCodeToString( error_code.val ) << ")" );
     return false;
   }
-
-  //  double limit = 10 * M_PI / 180;
-
-  //  // find maximum position change
-  //  double min_change_factor = 1;
-  //  double requested_change = 0;
-  //  for (unsigned int i = 0; i < solution.size(); i++) {
-  //      double change = std::abs(seed[i] - solution[i]);
-  //      if (change != 0.0) {
-  //          double factor = limit/change;
-  //          if (factor < min_change_factor) {
-  //              min_change_factor = factor;
-  //              requested_change = change;
-  //          }
-  //      }
-  //  }
-
-  //  // limit joint angle change
-  //  if (min_change_factor < 1) {
-  //      for (unsigned int i = 0; i < solution.size(); i++) {
-  //          double change = solution[i] - seed[i];
-  //          solution[i] =  seed[i] + (change * min_change_factor);
-  //      }
-  //      ROS_WARN_STREAM_THROTTLE(1, "Joint angle change (" << requested_change << ") bigger than
-  //      max (" << limit << "). Limiting speed with factor: " << min_change_factor << ".");
-  //      std::stringstream debug; debug << "Current\t | \t Requested" << std::endl; for (unsigned
-  //      int i = 0; i < solution.size(); i++) {
-  //          debug << seed[i] << "\t\t" << solution[i] << std::endl;
-  //      }
-  //      ROS_WARN_STREAM_THROTTLE(1, debug.str());
-  //  }
 
   return true;
 }
@@ -235,41 +206,33 @@ std::string InverseKinematics::getParameterFromTopic( const std::string &topic )
   return param;
 }
 
-void InverseKinematics::setKinematicParameters( const std::string &group_name ) const
+
+void InverseKinematics::setKinematicParameters(const std::string &group_name) const
 {
-  // set kinematic parameters -> will be loaded within moveit initialisation
-  // unfortunately, not possible to pass as parameters during initialisation
-  // kinematic solver
-  node_->declare_parameter<std::string>( "_kinematics." + group_name + ".kinematics_solver",
-                                         "kdl_kinematics_plugin/KDLKinematicsPlugin" );
-  std::string kinematics_solver = "kdl_kinematics_plugin/KDLKinematicsPlugin";
-  // if lifecyle node has that parameter, set it
-  if ( lifecycle_node_->has_parameter( "kinematics_solver" ) ) {
-    kinematics_solver = lifecycle_node_->get_parameter( "kinematics_solver" ).as_string();
-  }
-  node_->set_parameter(
-      rclcpp::Parameter( "_kinematics." + group_name + ".kinematics_solver", kinematics_solver ) );
-
-  // search resolution
-  node_->declare_parameter<double>(
-      "_kinematics." + group_name + ".kinematics_solver_search_resolution", 0.0050000000000000001 );
-  double search_resolution = 0.0050000000000000001;
-  if ( lifecycle_node_->has_parameter( "kinematics_solver_search_resolution" ) ) {
-    search_resolution =
-        lifecycle_node_->get_parameter( "kinematics_solver_search_resolution" ).as_double();
-  }
-  node_->set_parameter( rclcpp::Parameter(
-      "_kinematics." + group_name + ".kinematics_solver_search_resolution", search_resolution ) );
-
-  // timeout
-  node_->declare_parameter<double>( "_kinematics." + group_name + ".kinematics_solver_timeout",
-                                    0.050000000000000003 );
-  double timeout = 0.050000000000000003;
-  if ( lifecycle_node_->has_parameter( "kinematics_solver_timeout" ) ) {
-    timeout = lifecycle_node_->get_parameter( "kinematics_solver_timeout" ).as_double();
-  }
-  node_->set_parameter(
-      rclcpp::Parameter( "_kinematics." + group_name + ".kinematics_solver_timeout", timeout ) );
+  declareAndSetMoveitParameter<std::string>(  "kinematics_solver", group_name, "pick_ik/PickIkPlugin");
+  declareAndSetMoveitParameter<double>("kinematics_solver_timeout", group_name, 0.05);
+  declareAndSetMoveitParameter<int64_t>("kinematics_solver_attempts",group_name,3);
+  declareAndSetMoveitParameter<std::string>("mode", group_name, std::string("local"));
+  declareAndSetMoveitParameter<bool>( "stop_optimization_on_valid_solution", group_name, true);
+  declareAndSetMoveitParameter<double>("position_scale", group_name, 1.0);
+  declareAndSetMoveitParameter<double>("rotation_scale", group_name, 0.5);
+  declareAndSetMoveitParameter<double>("position_threshold", group_name, 0.001);
+  declareAndSetMoveitParameter<double>("orientation_threshold", group_name, 0.01);
+  declareAndSetMoveitParameter<double>("cost_threshold", group_name, 0.001);
+  declareAndSetMoveitParameter<double>("minimal_displacement_weight", group_name, 0.001);
+  declareAndSetMoveitParameter<double>("gd_step_size", group_name, 0.0001);
 }
+
+std::vector<double> InverseKinematics::getJointVelocityLimits() const
+{
+  const auto& limits = joint_model_group_->getMaxVelocitiesAndAccelerationBounds();
+  std::vector<double> velocity_limits( arm_joint_names_.size() );
+    for ( size_t i = 0; i < arm_joint_names_.size(); ++i ) {
+        velocity_limits[i] = limits.first[i];
+    }
+  return velocity_limits;
+}
+
+
 
 } // namespace moveit_twist_controller
