@@ -126,14 +126,14 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     }
     // Create publishers and subscriptions.
     goal_pose_pub_ =
-        get_node()->create_publisher<geometry_msgs::msg::PoseStamped>(  "~/goal_pose", 10 );
+        get_node()->create_publisher<geometry_msgs::msg::PoseStamped>( "~/goal_pose", 10 );
     robot_state_pub_ =
-        get_node()->create_publisher<moveit_msgs::msg::DisplayRobotState>(  "~/robot_state", 10 );
-    enabled_pub_ = get_node()->create_publisher<std_msgs::msg::Bool>(  "~/enabled", 10 );
+        get_node()->create_publisher<moveit_msgs::msg::DisplayRobotState>( "~/robot_state", 10 );
+    enabled_pub_ = get_node()->create_publisher<std_msgs::msg::Bool>( "~/enabled", 10 );
 
     // Twist command subscription
     twist_cmd_sub_ = get_node()->create_subscription<geometry_msgs::msg::TwistStamped>(
-         "~/eef_cmd", 10, [this]( const geometry_msgs::msg::TwistStamped::SharedPtr twist_msg ) {
+        "~/eef_cmd", 10, [this]( const geometry_msgs::msg::TwistStamped::SharedPtr twist_msg ) {
           twist_.linear.x() = twist_msg->twist.linear.x; // TODO: store frame
           twist_.linear.y() = twist_msg->twist.linear.y;
           twist_.linear.z() = twist_msg->twist.linear.z;
@@ -144,15 +144,15 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
 
     // Gripper speed subscription
     gripper_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64>(
-         "~/gripper_cmd", 10, [this]( const std_msgs::msg::Float64::SharedPtr msg ) {
+        "~/gripper_cmd", 10, [this]( const std_msgs::msg::Float64::SharedPtr msg ) {
           gripper_speed_ = msg->data;
           ;
         } );
 
     // Services
     reset_pose_server_ = get_node()->create_service<std_srvs::srv::Empty>(
-         "~/reset_pose", [this]( const std::shared_ptr<std_srvs::srv::Empty::Request> request,
-                              std::shared_ptr<std_srvs::srv::Empty::Response> response ) {
+        "~/reset_pose", [this]( const std::shared_ptr<std_srvs::srv::Empty::Request> request,
+                                std::shared_ptr<std_srvs::srv::Empty::Response> response ) {
           (void)request;
           (void)response;
           reset_pose_ = true;
@@ -160,16 +160,16 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
         } );
 
     reset_tool_center_server_ = get_node()->create_service<std_srvs::srv::Empty>(
-         "~/reset_tool_center", [this]( const std::shared_ptr<std_srvs::srv::Empty::Request> request,
-                                     std::shared_ptr<std_srvs::srv::Empty::Response> response ) {
+        "~/reset_tool_center", [this]( const std::shared_ptr<std_srvs::srv::Empty::Request> request,
+                                       std::shared_ptr<std_srvs::srv::Empty::Response> response ) {
           (void)request;
           (void)response;
           reset_tool_center_ = true;
           return true;
         } );
     hold_pose_server_ = get_node()->create_service<std_srvs::srv::SetBool>(
-         "~/hold_mode", [this]( const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-                             std::shared_ptr<std_srvs::srv::SetBool::Response> response ) {
+        "~/hold_mode", [this]( const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                               std::shared_ptr<std_srvs::srv::SetBool::Response> response ) {
           if ( hold_pose_ != request->data ) {
             hold_pose_ = request->data;
             RCLCPP_INFO_STREAM( get_node()->get_logger(),
@@ -183,8 +183,8 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
         } );
 
     move_tool_center_server_ = get_node()->create_service<std_srvs::srv::SetBool>(
-         "~/move_tool_center", [this]( const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-                                    std::shared_ptr<std_srvs::srv::SetBool::Response> response ) {
+        "~/move_tool_center", [this]( const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                                      std::shared_ptr<std_srvs::srv::SetBool::Response> response ) {
           move_tool_center_ = request->data;
           response->success = true;
           return true;
@@ -193,17 +193,17 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     // test whether the frame base_link or the frame athene/base_link is available
     tf2::Stamped<tf2::Transform> transform;
     try {
-      bool base_link_exists = tf_buffer_->_frameExists("base_link" );
-      bool athene_base_link_exists = tf_buffer_->_frameExists("athena/base_link" );
+      bool base_link_exists = tf_buffer_->_frameExists( "base_link" );
+      bool athene_base_link_exists = tf_buffer_->_frameExists( "athena/base_link" );
       if ( base_link_exists ) {
         RCLCPP_WARN( get_node()->get_logger(), "base_link exists" );
       } else {
         RCLCPP_WARN( get_node()->get_logger(), "base_link does not exist" );
       }
       if ( athene_base_link_exists ) {
-          RCLCPP_WARN( get_node()->get_logger(), "athena/base_link exists" );
+        RCLCPP_WARN( get_node()->get_logger(), "athena/base_link exists" );
       } else {
-          RCLCPP_WARN( get_node()->get_logger(), "athena/base_link does not exist" );
+        RCLCPP_WARN( get_node()->get_logger(), "athena/base_link does not exist" );
       }
     } catch ( tf2::TransformException &ex ) {
       RCLCPP_ERROR( get_node()->get_logger(), "Error: %s", ex.what() );
@@ -313,18 +313,17 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
   return controller_interface::return_type::OK;
 }
 
-double MoveitTwistController::computeJointAngleDiff( const double angle_1,
-                                                        const double angle_2 ) const
+double MoveitTwistController::computeJointAngleDiff( const double angle_1, const double angle_2 ) const
 {
   // First compute the naive difference
   double diff = angle_2 - angle_1;
 
   // Normalize the difference into the range [-pi, pi]
-  diff = fmod(diff, 2.0 * M_PI);
-  if (diff > M_PI) {
+  diff = fmod( diff, 2.0 * M_PI );
+  if ( diff > M_PI ) {
     diff -= 2.0 * M_PI;
-  } else if (diff < -M_PI) {
-    diff += 2.0 * M_PI;        // shift from [-2*pi, -pi) to [0, pi)
+  } else if ( diff < -M_PI ) {
+    diff += 2.0 * M_PI; // shift from [-2*pi, -pi) to [0, pi)
   }
 
   return diff;
@@ -358,25 +357,30 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
   }
   // Make sure that the change in joint angles is not too large -> velocity limits
   double max_velocity_factor = 0;
-  for ( size_t i=0; i<goal_state_.size(); ++i ) {
-    const double angle_diff = std::abs(computeJointAngleDiff(  previous_goal_state_[i], goal_state_[i] ));
-    max_velocity_factor = std::max( max_velocity_factor, angle_diff/(joint_velocity_limits_[i]*period.seconds()) );
-    if (angle_diff/(joint_velocity_limits_[i]*period.seconds())>1.0) {
-      RCLCPP_WARN( get_node()->get_logger(), "Joint %s: Max change in joint angles is > 1.0 Old State: %f, New State: %f, angle diff %f", arm_joint_names_[i].c_str(), previous_goal_state_[i], goal_state_[i], angle_diff );
+  for ( size_t i = 0; i < goal_state_.size(); ++i ) {
+    const double angle_diff =
+        std::abs( computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] ) );
+    max_velocity_factor = std::max( max_velocity_factor,
+                                    angle_diff / ( joint_velocity_limits_[i] * period.seconds() ) );
+    if ( angle_diff / ( joint_velocity_limits_[i] * period.seconds() ) > 1.0 ) {
+      RCLCPP_WARN(
+          get_node()->get_logger(), "Joint %s: Max change in joint angles is > 1.0 Old State: %f, New State: %f, angle diff %f",
+          arm_joint_names_[i].c_str(), previous_goal_state_[i], goal_state_[i], angle_diff );
     }
   }
 
-  if (max_velocity_factor>1.0) {
-    RCLCPP_WARN( get_node()->get_logger(), "Max velocity factor: %f. Rejected goal state.", max_velocity_factor );
+  if ( max_velocity_factor > 1.0 ) {
+    RCLCPP_WARN( get_node()->get_logger(), "Max velocity factor: %f. Rejected goal state.",
+                 max_velocity_factor );
     reset_pose_ = true;
     goal_state_ = previous_goal_state_;
-  }else {
+  } else {
     // avoid jumps in joint angles especially in the continuous joints!!
-    for ( size_t i=0; i<goal_state_.size(); ++i ) {
-      goal_state_[i] = previous_goal_state_[i] + computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] );
+    for ( size_t i = 0; i < goal_state_.size(); ++i ) {
+      goal_state_[i] =
+          previous_goal_state_[i] + computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] );
     }
   }
-
 
   bool success = true;
   // Write next goal state to command_interfaces_
@@ -491,13 +495,13 @@ void MoveitTwistController::publishRobotState(
   sensor_msgs::msg::JointState joint_state;
   joint_state.name = joint_names_;
   joint_state.position = current_joint_angles_;
-  moveit::core::RobotState robot_state =
-      ik_.getAsRobotState( joint_state, arm_joint_states );
+  moveit::core::RobotState robot_state = ik_.getAsRobotState( joint_state, arm_joint_states );
 
   // transform the base
   geometry_msgs::msg::TransformStamped transform_stamped;
   try {
-    transform_stamped = tf_buffer_->lookupTransform( "world", ik_.getBaseFrame(), tf2::TimePointZero );
+    transform_stamped =
+        tf_buffer_->lookupTransform( "world", ik_.getBaseFrame(), tf2::TimePointZero );
   } catch ( tf2::TransformException &ex ) {
     RCLCPP_WARN( get_node()->get_logger(), "%s", ex.what() );
     return;

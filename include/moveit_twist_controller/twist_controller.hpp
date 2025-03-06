@@ -1,33 +1,35 @@
 #ifndef MOVEIT_JOYSTICK_CONTROL__JOYSTICK_CONTROL_HPP_
 #define MOVEIT_JOYSTICK_CONTROL__JOYSTICK_CONTROL_HPP_
 
-#include <memory>
-#include <vector>
-#include <string>
 #include <Eigen/Eigen>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "controller_interface/controller_interface.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
+#include "moveit_twist_controller/inverse_kinematics.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
-#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "std_srvs/srv/empty.hpp"
 #include "std_srvs/srv/set_bool.hpp"
-#include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
-#include "moveit_twist_controller/inverse_kinematics.hpp"
-#include <std_msgs/msg/bool.hpp>
+#include "tf2_ros/transform_listener.h"
 #include <moveit_msgs/msg/display_robot_state.hpp>
 #include <moveit_twist_controller/moveit_twist_controller_parameters.hpp>
+#include <std_msgs/msg/bool.hpp>
 
-namespace moveit_twist_controller {
+namespace moveit_twist_controller
+{
 
 struct Twist {
   Eigen::Vector3d linear;
   Eigen::Vector3d angular;
 };
 
-class MoveitTwistController : public controller_interface::ControllerInterface {
+class MoveitTwistController : public controller_interface::ControllerInterface
+{
 public:
   MoveitTwistController();
   ~MoveitTwistController() override = default;
@@ -36,39 +38,43 @@ public:
   controller_interface::InterfaceConfiguration state_interface_configuration() const override;
 
   controller_interface::CallbackReturn on_init() override;
-  controller_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
-  controller_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
-  controller_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  controller_interface::CallbackReturn
+  on_configure( const rclcpp_lifecycle::State &previous_state ) override;
+  controller_interface::CallbackReturn
+  on_activate( const rclcpp_lifecycle::State &previous_state ) override;
+  controller_interface::CallbackReturn
+  on_deactivate( const rclcpp_lifecycle::State &previous_state ) override;
 
-  controller_interface::return_type update(const rclcpp::Time & time, const rclcpp::Duration & period) override;
+  controller_interface::return_type update( const rclcpp::Time &time,
+                                            const rclcpp::Duration &period ) override;
 
 private:
   void publishStatus() const;
   bool loadGripperJointLimits();
-  void updateArm(const rclcpp::Time & time, const rclcpp::Duration & period);
-  bool computeNewGoalPose(const rclcpp::Duration & period);
-  void updateGripper(const rclcpp::Time & time, const rclcpp::Duration & period);
+  void updateArm( const rclcpp::Time &time, const rclcpp::Duration &period );
+  bool computeNewGoalPose( const rclcpp::Duration &period );
+  void updateGripper( const rclcpp::Time &time, const rclcpp::Duration &period );
 
-  bool resetPoseCb(const std_srvs::srv::Empty::Request::SharedPtr request,
-                   std_srvs::srv::Empty::Response::SharedPtr response);
-  bool resetToolCenterCb(const std_srvs::srv::Empty::Request::SharedPtr request,
-                         std_srvs::srv::Empty::Response::SharedPtr response);
-  bool holdPoseCb(const std_srvs::srv::SetBool::Request::SharedPtr request,
-                  std_srvs::srv::SetBool::Response::SharedPtr response);
-  bool moveToolCenterCb(const std_srvs::srv::SetBool::Request::SharedPtr request,
-                        std_srvs::srv::SetBool::Response::SharedPtr response);
-  void publishRobotState(const std::vector<double>& arm_joint_states, const collision_detection::CollisionResult::ContactMap& contact_map_);
+  bool resetPoseCb( const std_srvs::srv::Empty::Request::SharedPtr request,
+                    std_srvs::srv::Empty::Response::SharedPtr response );
+  bool resetToolCenterCb( const std_srvs::srv::Empty::Request::SharedPtr request,
+                          std_srvs::srv::Empty::Response::SharedPtr response );
+  bool holdPoseCb( const std_srvs::srv::SetBool::Request::SharedPtr request,
+                   std_srvs::srv::SetBool::Response::SharedPtr response );
+  bool moveToolCenterCb( const std_srvs::srv::SetBool::Request::SharedPtr request,
+                         std_srvs::srv::SetBool::Response::SharedPtr response );
+  void publishRobotState( const std::vector<double> &arm_joint_states,
+                          const collision_detection::CollisionResult::ContactMap &contact_map_ );
   void hideRobotState() const;
   void setupInterfaces();
-  double computeJointAngleDiff(double angle_1, double angle_2) const;
+  double computeJointAngleDiff( double angle_1, double angle_2 ) const;
   /// Transforms pose to desired frame
   /// Pose has to be relative to base frame
-  geometry_msgs::msg::PoseStamped getPoseInFrame(const Eigen::Affine3d& pose,
+  geometry_msgs::msg::PoseStamped getPoseInFrame( const Eigen::Affine3d &pose,
                                                   const std::string &frame );
 
-
   bool initialized_ = false;
-  bool enabled_ ;
+  bool enabled_;
   bool reset_pose_;
   bool reset_tool_center_;
   bool move_tool_center_;
@@ -95,7 +101,7 @@ private:
   std::vector<double> current_joint_angles_;
   std::vector<double> current_arm_joint_angles;
   std::vector<int> arm_joint_indices_; // indices of arm joints in joint_names_
-  int gripper_index_; // index of gripper in joint_names_
+  int gripper_index_;                  // index of gripper in joint_names_
 
   std::string gripper_joint_name_;
   double gripper_upper_limit_;
@@ -106,7 +112,6 @@ private:
   geometry_msgs::msg::PoseStamped hold_goal_pose_;
 
   rclcpp::Node::SharedPtr moveit_init_node_;
-
 
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_cmd_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gripper_cmd_sub_;
@@ -124,6 +129,6 @@ private:
   std::shared_ptr<moveit_twist_controller::ParamListener> param_listener_;
 };
 
-}  // namespace moveit_twist_controller
+} // namespace moveit_twist_controller
 
-#endif  // MOVEIT_JOYSTICK_CONTROL__JOYSTICK_CONTROL_HPP_
+#endif // MOVEIT_JOYSTICK_CONTROL__JOYSTICK_CONTROL_HPP_
