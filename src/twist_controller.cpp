@@ -78,9 +78,9 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     else if ( params.free_angle == "z" )
       free_angle_ = 2;
 
-    // start status thread
-    moveit_init_node_ =
-        std::make_shared<rclcpp::Node>( "twist_controller_status", get_node()->get_namespace() );
+    // create a node to initialize the IK solver
+    moveit_init_node_ = std::make_shared<rclcpp::Node>(
+        get_node()->get_name() + std::string( "_moveit_init" ), get_node()->get_namespace() );
 
     ik_.init( get_node(), moveit_init_node_, params.group_name );
 
