@@ -29,7 +29,6 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
         moveit_core
         moveit_ros_planning
         sensor_msgs
-        kdl_parser
         urdf
         moveit_msgs
         tf2_ros

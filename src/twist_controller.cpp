@@ -100,17 +100,6 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
       }
     }
     joint_velocity_limits_ = ik_.getJointVelocityLimits();
-    // print joint names and arm joint names
-    std::stringstream debug;
-    debug << "All joints:" << std::endl;
-    for ( const auto &joint_name : joint_names_ ) { debug << joint_name << std::endl; }
-    debug << "Arm joints:" << std::endl;
-    for ( const auto &joint_name : arm_joint_names_ ) { debug << joint_name << std::endl; }
-    debug << "Arm joint Velocity limits:" << std::endl;
-    for ( size_t i = 0; i < arm_joint_names_.size(); ++i ) {
-      debug << arm_joint_names_[i] << ": " << joint_velocity_limits_[i] << std::endl;
-    }
-    RCLCPP_INFO( get_node()->get_logger(), "%s", debug.str().c_str() );
     goal_state_.resize( arm_joint_names_.size() );
     current_joint_angles_.resize( joint_names_.size() );
     current_arm_joint_angles.resize( arm_joint_names_.size() );
@@ -189,26 +178,6 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
           response->success = true;
           return true;
         } );
-    // TEST if tf is remapped correctly
-    // test whether the frame base_link or the frame athene/base_link is available
-    tf2::Stamped<tf2::Transform> transform;
-    try {
-      bool base_link_exists = tf_buffer_->_frameExists( "base_link" );
-      bool athene_base_link_exists = tf_buffer_->_frameExists( "athena/base_link" );
-      if ( base_link_exists ) {
-        RCLCPP_WARN( get_node()->get_logger(), "base_link exists" );
-      } else {
-        RCLCPP_WARN( get_node()->get_logger(), "base_link does not exist" );
-      }
-      if ( athene_base_link_exists ) {
-        RCLCPP_WARN( get_node()->get_logger(), "athena/base_link exists" );
-      } else {
-        RCLCPP_WARN( get_node()->get_logger(), "athena/base_link does not exist" );
-      }
-    } catch ( tf2::TransformException &ex ) {
-      RCLCPP_ERROR( get_node()->get_logger(), "Error: %s", ex.what() );
-    }
-    RCLCPP_WARN( get_node()->get_logger(), "Namespace: %s", get_node()->get_namespace() );
   } catch ( const std::exception &e ) {
     RCLCPP_ERROR( get_node()->get_logger(), "Exception during on_configure: %s", e.what() );
     return controller_interface::CallbackReturn::ERROR;
@@ -507,8 +476,8 @@ void MoveitTwistController::publishRobotState(
     return;
   }
 
-  Eigen::Affine3d pose = tf2::transformToEigen( transform_stamped.transform );
-  updateRobotStatePose( robot_state, pose );
+  Eigen::Isometry3d pose = tf2::transformToEigen( transform_stamped.transform );
+  robot_state.setJointPositions( "world_virtual_joint", pose );
 
   moveit_msgs::msg::DisplayRobotState display_robot_state;
   moveit::core::robotStateToRobotStateMsg( robot_state, display_robot_state.state );
