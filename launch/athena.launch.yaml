@@ -1,17 +1,8 @@
-launch:
-- arg:
-    name: param_file
-    default: "$(find-pkg-share moveit_twist_controller)/config/athena.yaml"
-
 - node:
     pkg: "controller_manager"
     exec: "spawner"
+    name: "moveit_twist_controller_spawner"
     output: "screen"
-    name: "moveit_joystick_control_spawner"
-    # args: [--inactive --param-file $(var param_file) moveit_twist_controller]
-    arguments:
-      - moveit_twist_controller
-      - "-c"                      # short for --controller-manager
-      - "/controller_manager"
-
-
+    args: "--inactive moveit_twist_controller"
+    param:
+      - from: "$(find-pkg-share moveit_twist_controller)/config/athena.yaml"
