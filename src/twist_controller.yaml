@@ -4,7 +4,7 @@ moveit_twist_controller:
       type: string,
       default_value: "",
       description: "Axis where the actual rotation is free. -1 means no free angle.",
-      read_only: false,
+      read_only: true,
       validation: {
         one_of<>: [ [ "","x","y","z" ] ]
       }
@@ -15,7 +15,7 @@ moveit_twist_controller:
       type: string,
       default_value: "gripper_servo_joint",
       description: "Name of the gripper joint in the urdf",
-      read_only: false,
+      read_only: true,
       validation: {
         not_empty<>: [ ]
       }
@@ -26,10 +26,26 @@ moveit_twist_controller:
       type: string,
       default_value: "arm_group",
       description: "Name of the group in the moveit configuration.",
-      read_only: false,
+      read_only: true,
       validation: {
         not_empty<>: [ ]
       }
+    }
+
+  request_current_interface:
+    {
+      type: bool,
+      default_value: false,
+      description: "Request Current Interface per arm joint and provide service for current limit activation.",
+      read_only: true
+    }
+
+  current_limits:
+    {
+      type: double_array,
+      default_value: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      description: "Current limits for each joint in the group in Ampere.",
+      read_only: false
     }
 
   reject_if_velocity_limits_violated:

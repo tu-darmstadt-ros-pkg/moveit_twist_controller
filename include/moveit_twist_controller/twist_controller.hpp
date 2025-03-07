@@ -67,20 +67,23 @@ private:
                           const collision_detection::CollisionResult::ContactMap &contact_map_ );
   void hideRobotState() const;
   void setupInterfaces();
-  double computeJointAngleDiff( double angle_1, double angle_2 ) const;
+  static double computeJointAngleDiff( double angle_1, double angle_2 );
+  bool setCommand( double value, const std::string &joint_name, const std::string &interface_name );
+  bool getState( double &value, const std::string &joint_name, const std::string &interface_name );
+  void updateDynamicParameters();
   /// Transforms pose to desired frame
   /// Pose has to be relative to base frame
   geometry_msgs::msg::PoseStamped getPoseInFrame( const Eigen::Affine3d &pose,
                                                   const std::string &frame );
 
   bool initialized_ = false;
-  bool enabled_;
-  bool reset_pose_;
-  bool reset_tool_center_;
-  bool move_tool_center_;
+  bool enabled_ = false;
+  bool reset_pose_ = false;
+  bool reset_tool_center_ = false;
+  bool move_tool_center_ = false;
 
-  double max_speed_gripper_;
-  int free_angle_;
+  double max_speed_gripper_ = 0.0;
+  int free_angle_ = -1;
 
   Eigen::Affine3d tool_center_offset_;
   Eigen::Affine3d tool_goal_pose_;
@@ -91,29 +94,30 @@ private:
   collision_detection::CollisionResult::ContactMap contact_map_;
 
   Twist twist_;
-  double gripper_pos_;
-  double gripper_speed_;
+  double gripper_pos_ = 0.0;
+  double gripper_speed_ = 0.0;
   std::vector<double> joint_velocity_limits_;
 
   std::vector<std::string> joint_names_;
   std::vector<std::string> arm_joint_names_;
-  bool joint_state_received_;
+  bool joint_state_received_ = false;
+  bool set_current_limits_ = false;
   std::vector<double> current_joint_angles_;
   std::vector<double> current_arm_joint_angles;
   std::vector<int> arm_joint_indices_; // indices of arm joints in joint_names_
-  int gripper_index_;                  // index of gripper in joint_names_
+  int gripper_index_ = 0;              // index of gripper in joint_names_
 
-  std::string gripper_joint_name_;
-  double gripper_upper_limit_;
-  double gripper_lower_limit_;
+  double gripper_upper_limit_ = 0.0;
+  double gripper_lower_limit_ = 0.0;
 
   bool reject_if_velocity_limits_violated_ = true;
 
   InverseKinematics ik_;
-  bool hold_pose_;
+  bool hold_pose_ = false;
   geometry_msgs::msg::PoseStamped hold_goal_pose_;
 
-  rclcpp::Node::SharedPtr moveit_init_node_;
+  moveit_twist_controller::Params params_;
+  std::shared_ptr<moveit_twist_controller::ParamListener> param_listener_;
 
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_cmd_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gripper_cmd_sub_;
@@ -121,6 +125,7 @@ private:
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_tool_center_server_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr hold_pose_server_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr move_tool_center_server_;
+  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_current_limits_server_;
 
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_pub_;
   rclcpp_lifecycle::LifecyclePublisher<moveit_msgs::msg::DisplayRobotState>::SharedPtr robot_state_pub_;
@@ -128,7 +133,7 @@ private:
 
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
-  std::shared_ptr<moveit_twist_controller::ParamListener> param_listener_;
+  rclcpp::Node::SharedPtr moveit_init_node_;
 };
 
 } // namespace moveit_twist_controller
