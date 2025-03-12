@@ -6,7 +6,7 @@ moveit_twist_controller:
       description: "Axis where the actual rotation is free. -1 means no free angle.",
       read_only: false,
       validation: {
-        one_of<>: [["","x","y","z"]]
+        one_of<>: [ [ "","x","y","z" ] ]
       }
     }
 
@@ -17,7 +17,7 @@ moveit_twist_controller:
       description: "Name of the gripper joint in the urdf",
       read_only: false,
       validation: {
-        not_empty<>: []
+        not_empty<>: [ ]
       }
     }
 
@@ -31,3 +31,12 @@ moveit_twist_controller:
         not_empty<>: [ ]
       }
     }
+
+  reject_if_velocity_limits_violated:
+    {
+      type: bool,
+      default_value: true,
+      description: "Reject commands that violate the velocity limits.",
+      read_only: false
+    }
+
