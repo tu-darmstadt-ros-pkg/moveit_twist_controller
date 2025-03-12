@@ -78,6 +78,8 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     else if ( params.free_angle == "z" )
       free_angle_ = 2;
 
+    reject_if_velocity_limits_violated_ = params.reject_if_velocity_limits_violated;
+
     // create a node to initialize the IK solver
     moveit_init_node_ = std::make_shared<rclcpp::Node>(
         get_node()->get_name() + std::string( "_moveit_init" ), get_node()->get_namespace() );
@@ -338,7 +340,7 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     }
   }
 
-  if ( max_velocity_factor > 1.0 ) {
+  if ( reject_if_velocity_limits_violated_ && max_velocity_factor > 1.0 ) {
     RCLCPP_WARN( get_node()->get_logger(), "Max velocity factor: %f. Rejected goal state.",
                  max_velocity_factor );
     reset_pose_ = true;
