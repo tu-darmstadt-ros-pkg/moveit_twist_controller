@@ -210,6 +210,7 @@ void InverseKinematics::setKinematicParameters( const std::string &group_name ) 
   declareAndSetMoveitParameter<std::string>( "kinematics_solver", group_name, "pick_ik/PickIkPlugin" );
   declareAndSetMoveitParameter<double>( "kinematics_solver_timeout", group_name, 0.05 );
   declareAndSetMoveitParameter<int64_t>( "kinematics_solver_attempts", group_name, 3 );
+  // pick_ik specific parameters
   declareAndSetMoveitParameter<std::string>( "mode", group_name, std::string( "local" ) );
   declareAndSetMoveitParameter<bool>( "stop_optimization_on_valid_solution", group_name, true );
   declareAndSetMoveitParameter<double>( "position_scale", group_name, 1.0 );
@@ -219,6 +220,8 @@ void InverseKinematics::setKinematicParameters( const std::string &group_name ) 
   declareAndSetMoveitParameter<double>( "cost_threshold", group_name, 0.001 );
   declareAndSetMoveitParameter<double>( "minimal_displacement_weight", group_name, 0.001 );
   declareAndSetMoveitParameter<double>( "gd_step_size", group_name, 0.0001 );
+  // trac_ik specific parameters
+  declareAndSetMoveitParameter<std::string>( "solve_type", group_name, "Distance" );
 }
 
 std::vector<double> InverseKinematics::getJointVelocityLimits() const
