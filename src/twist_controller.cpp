@@ -122,7 +122,7 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
 
     // Current limit setup
     if ( params_.request_current_interface ) {
-      if ( params_.current_limits.size() != arm_joint_names_.size() ) {
+      if ( params_.current_limits.arm_joints_map.size() != arm_joint_names_.size() ) {
         RCLCPP_ERROR( get_node()->get_logger(),
                       "Current limits size does not match arm joint names size" );
         return controller_interface::CallbackReturn::ERROR;
@@ -378,7 +378,9 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     success &= setCommand( goal_state_[i], arm_joint_names_[i], "position" );
     // if current interfaces requested, write current limit, write 0 if current limits not enabled
     if ( params_.request_current_interface ) {
-      const double limit = set_current_limits_ ? params_.current_limits[i] : 0;
+      const double limit = set_current_limits_
+                               ? params_.current_limits.arm_joints_map[arm_joint_names_[i]].limit
+                               : 0.0;
       success &= setCommand( limit, arm_joint_names_[i], "current" );
     }
   }
@@ -574,7 +576,7 @@ void MoveitTwistController::updateDynamicParameters()
 {
   const auto params = param_listener_->get_params();
   // update current limits
-  if ( params.current_limits.size() != arm_joint_names_.size() ) {
+  if ( params.current_limits.arm_joints_map.size() != arm_joint_names_.size() ) {
     RCLCPP_ERROR( get_node()->get_logger(),
                   "Current limits size does not match arm joint names size" );
     return;
