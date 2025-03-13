@@ -69,7 +69,8 @@ private:
   void setupInterfaces();
   static double computeJointAngleDiff( double angle_1, double angle_2 );
   bool setCommand( double value, const std::string &joint_name, const std::string &interface_name );
-  bool getState( double &value, const std::string &joint_name, const std::string &interface_name );
+  bool getState( double &value, const std::string &joint_name,
+                 const std::string &interface_name ) const;
   void updateDynamicParameters();
   /// Transforms pose to desired frame
   /// Pose has to be relative to base frame
@@ -118,6 +119,8 @@ private:
 
   moveit_twist_controller::Params params_;
   std::shared_ptr<moveit_twist_controller::ParamListener> param_listener_;
+  mutable std::map<std::string, size_t> joint_state_interface_mapping_;
+  mutable std::map<std::string, size_t> joint_command_interface_mapping_;
 
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_cmd_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gripper_cmd_sub_;

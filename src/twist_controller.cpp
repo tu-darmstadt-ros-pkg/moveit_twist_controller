@@ -20,13 +20,18 @@ controller_interface::InterfaceConfiguration MoveitTwistController::command_inte
     RCLCPP_ERROR( get_node()->get_logger(),
                   "Arm joint names are empty in command_interface_configuration" );
   // all arm joints
+  size_t index = 0;
   for ( const auto &joint_name : arm_joint_names_ ) {
     config.names.push_back( joint_name + "/position" );
-    if ( params_.request_current_interface )
+    joint_command_interface_mapping_[joint_name + "/position"] = index++;
+    if ( params_.request_current_interface ) {
       config.names.push_back( joint_name + "/current" );
+      joint_command_interface_mapping_[joint_name + "/current"] = index++;
+    }
   }
   // The gripper joint
   config.names.push_back( params_.gripper_joint_name + std::string( "/position" ) );
+  joint_command_interface_mapping_[params_.gripper_joint_name + "/position"] = index++;
   return config;
 }
 
@@ -37,9 +42,10 @@ controller_interface::InterfaceConfiguration MoveitTwistController::state_interf
   controller_interface::InterfaceConfiguration config;
   config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
   // request state for all joints
-  for ( const auto &joint_name : joint_names_ ) {
+  for ( size_t i = 0; i < joint_names_.size(); i++ ) {
+    const auto &joint_name = joint_names_[i];
     config.names.push_back( joint_name + "/position" );
-    // config.names.push_back(joint_name + "/velocity");
+    joint_state_interface_mapping_[joint_name + "/position"] = i;
   }
 
   return config;
@@ -442,27 +448,17 @@ bool MoveitTwistController::computeNewGoalPose( const rclcpp::Duration &period )
 bool MoveitTwistController::setCommand( const double value, const std::string &joint_name,
                                         const std::string &interface_name )
 {
-  const auto it = std::find_if( command_interfaces_.begin(), command_interfaces_.end(),
-                                [&joint_name, &interface_name]( const auto &iface ) {
-                                  return iface.get_name() == joint_name + "/" + interface_name;
-                                } );
-  if ( it != command_interfaces_.end() ) {
-    return it->set_value( value );
-  }
-  return false;
+  return command_interfaces_[joint_command_interface_mapping_[joint_name + "/" + interface_name]]
+      .set_value( value );
 }
 
 bool MoveitTwistController::getState( double &value, const std::string &joint_name,
-                                      const std::string &interface_name )
+                                      const std::string &interface_name ) const
 {
-  const auto it = std::find_if( state_interfaces_.begin(), state_interfaces_.end(),
-                                [&joint_name, &interface_name]( const auto &iface ) {
-                                  return iface.get_name() == joint_name + "/" + interface_name;
-                                } );
-  if ( it != state_interfaces_.end() ) {
-    return it->get_value( value );
-  }
-  return false;
+  const auto state =
+      state_interfaces_[joint_state_interface_mapping_[joint_name + "/" + interface_name]].get_optional();
+  value = state.value();
+  return state.has_value();
 }
 
 void MoveitTwistController::updateGripper( const rclcpp::Time & /*time*/,
