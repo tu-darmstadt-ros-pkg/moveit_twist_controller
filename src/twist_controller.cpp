@@ -359,7 +359,7 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     }
   }
 
-  if ( reject_if_velocity_limits_violated_ && max_velocity_factor > 1.0 ) {
+  if ( params_.reject_if_velocity_limits_violated && max_velocity_factor > 1.0 ) {
     RCLCPP_WARN( get_node()->get_logger(), "Max velocity factor: %f. Rejected goal state.",
                  max_velocity_factor );
     reset_pose_ = true;

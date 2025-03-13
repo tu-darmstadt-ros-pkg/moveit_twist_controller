@@ -111,8 +111,6 @@ private:
   double gripper_upper_limit_ = 0.0;
   double gripper_lower_limit_ = 0.0;
 
-  bool reject_if_velocity_limits_violated_ = true;
-
   InverseKinematics ik_;
   bool hold_pose_ = false;
   geometry_msgs::msg::PoseStamped hold_goal_pose_;
