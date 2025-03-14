@@ -80,12 +80,9 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     else if ( params_.free_angle == "z" )
       free_angle_ = 2;
 
-    reject_if_velocity_limits_violated_ = params_.reject_if_velocity_limits_violated;
-
     // create a node to initialize the IK solver
     moveit_init_node_ = std::make_shared<rclcpp::Node>(
         get_node()->get_name() + std::string( "_moveit_init" ), get_node()->get_namespace() );
-
 
     if ( !ik_.init( get_node(), moveit_init_node_, params_.group_name,
                     params_.robot_descriptions_loading_timeout ) )
