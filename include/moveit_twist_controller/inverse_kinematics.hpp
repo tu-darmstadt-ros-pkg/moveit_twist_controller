@@ -38,7 +38,7 @@ public:
 
 private:
   std::string moveitErrCodeToString( int32_t code );
-  std::string getParameterFromTopic( const std::string &topic ) const;
+  std::string getParameterFromTopic( const std::string &topic, double timeout_s ) const;
   void setKinematicParameters( const std::string &group_name ) const;
   template<typename T>
   void declareAndSetMoveitParameter( const std::string &param_name, const std::string &group_name,
