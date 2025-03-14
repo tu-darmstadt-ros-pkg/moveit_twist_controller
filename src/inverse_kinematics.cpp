@@ -14,10 +14,13 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
   RCLCPP_INFO( node_->get_logger(), "Initializing inverse kinematics controller in namespace '%s'.",
                node_->get_namespace() );
   RCLCPP_INFO( node_->get_logger(), "Moveit Group name: %s", group_name.c_str() );
-  auto robot_description = getParameterFromTopic( "robot_description" );
-  auto robot_description_semantic = getParameterFromTopic( "robot_description_semantic" );
+  auto robot_description = getParameterFromTopic( "robot_description", 3.0 );
+  auto robot_description_semantic = getParameterFromTopic( "robot_description_semantic", 3.0 );
   if ( robot_description.empty() || robot_description_semantic.empty() ) {
-    RCLCPP_ERROR( node_->get_logger(), "Failed to get robot description." );
+    if ( robot_description.empty() )
+      RCLCPP_ERROR( node_->get_logger(), "Failed to get robot description." );
+    if ( robot_description_semantic.empty() )
+      RCLCPP_ERROR( node_->get_logger(), "Failed to get robot description semantic." );
     return false;
   }
   setKinematicParameters( group_name );
@@ -183,7 +186,8 @@ std::string InverseKinematics::moveitErrCodeToString( const int32_t code )
   }
 }
 
-std::string InverseKinematics::getParameterFromTopic( const std::string &topic ) const
+std::string InverseKinematics::getParameterFromTopic( const std::string &topic,
+                                                      const double timeout_s ) const
 {
   std::string param;
   auto qos = rclcpp::QoS( 10 );
@@ -194,12 +198,14 @@ std::string InverseKinematics::getParameterFromTopic( const std::string &topic )
         param = msg->data;
       } );
   // wait for the message to be received
-  rclcpp::Rate rate( 3 );
+  constexpr double frequency = 3.0;
+  rclcpp::Rate rate( frequency );
+  const int max_attempts = static_cast<int>( timeout_s * frequency );
   int attempt = 0;
-  while ( param.empty() ) {
+  while ( param.empty() && attempt < max_attempts ) {
     rate.sleep();
     attempt++;
-    if ( attempt % 10 == 0 )
+    if ( attempt % 3 == 0 )
       RCLCPP_INFO( node_->get_logger(), "Waiting for param on topic %s", topic.c_str() );
   }
   return param;

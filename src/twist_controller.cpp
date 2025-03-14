@@ -84,7 +84,8 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     moveit_init_node_ = std::make_shared<rclcpp::Node>(
         get_node()->get_name() + std::string( "_moveit_init" ), get_node()->get_namespace() );
 
-    ik_.init( get_node(), moveit_init_node_, params.group_name );
+    if ( !ik_.init( get_node(), moveit_init_node_, params.group_name ) )
+      return controller_interface::CallbackReturn::ERROR;
 
     // Populate joint_names_ from the IK solver
     joint_names_ = ik_.getAllJointNames();
