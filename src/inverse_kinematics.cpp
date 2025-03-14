@@ -32,10 +32,10 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
   opt.srdf_string = robot_description_semantic;
   opt.robot_description = "robot_description";
 
-  robot_model_loader_.reset( new robot_model_loader::RobotModelLoader( node_, opt ) );
+  robot_model_loader_ = std::make_shared<robot_model_loader::RobotModelLoader>( node_, opt );
   robot_model_ = robot_model_loader_->getModel();
   planning_scene_ = std::make_shared<planning_scene::PlanningScene>( robot_model_ );
-  robot_state_.reset( new moveit::core::RobotState( robot_model_ ) );
+  robot_state_ = std::make_shared<moveit::core::RobotState>( robot_model_ );
   robot_state_->setToDefaultValues();
 
   // load joint model group
@@ -48,7 +48,7 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
   arm_joint_names_ = joint_model_group_->getActiveJointModelNames();
   joint_names_ = robot_model_->getActiveJointModelNames();
   // remove world_virtual_joint
-  if ( joint_names_.size() > 0 && joint_names_[0] == "world_virtual_joint" )
+  if ( !joint_names_.empty() && joint_names_[0] == "world_virtual_joint" )
     joint_names_.erase( joint_names_.begin() );
 
   // Retrieve solver
