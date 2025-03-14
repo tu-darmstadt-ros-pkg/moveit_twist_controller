@@ -7,15 +7,18 @@
 namespace moveit_twist_controller
 {
 bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node,
-                              rclcpp::Node::SharedPtr node, const std::string &group_name )
+                              rclcpp::Node::SharedPtr node, const std::string &group_name,
+                              const double robot_descriptions_loading_timeout )
 {
   node_ = node;                     // NOT SPINNING -> NO CALLBACKS BUT PARAMETERS SHOULD WORK
   lifecycle_node_ = lifecycle_node; // SPINNING -> CALLBACKS WORK
   RCLCPP_INFO( node_->get_logger(), "Initializing inverse kinematics controller in namespace '%s'.",
                node_->get_namespace() );
   RCLCPP_INFO( node_->get_logger(), "Moveit Group name: %s", group_name.c_str() );
-  auto robot_description = getParameterFromTopic( "robot_description", 3.0 );
-  auto robot_description_semantic = getParameterFromTopic( "robot_description_semantic", 3.0 );
+  auto robot_description =
+      getParameterFromTopic( "robot_description", robot_descriptions_loading_timeout );
+  auto robot_description_semantic =
+      getParameterFromTopic( "robot_description_semantic", robot_descriptions_loading_timeout );
   if ( robot_description.empty() || robot_description_semantic.empty() ) {
     if ( robot_description.empty() )
       RCLCPP_ERROR( node_->get_logger(), "Failed to get robot description." );
@@ -206,7 +209,8 @@ std::string InverseKinematics::getParameterFromTopic( const std::string &topic,
     rate.sleep();
     attempt++;
     if ( attempt % 3 == 0 )
-      RCLCPP_INFO( node_->get_logger(), "Waiting for param on topic %s", topic.c_str() );
+      RCLCPP_INFO( node_->get_logger(), "Waiting for param on topic %s. Attempt %d of %d",
+                   topic.c_str(), attempt, max_attempts );
   }
   return param;
 }
