@@ -40,3 +40,14 @@ moveit_twist_controller:
       read_only: false
     }
 
+  robot_descriptions_loading_timeout:
+    {
+      type: double,
+      default_value: 5.0,
+      description: "Timeout for loading the robot description and robot_description_semantic in seconds.",
+      read_only: false,
+      validation: {
+        gt<>: 0.0
+      }
+    }
+

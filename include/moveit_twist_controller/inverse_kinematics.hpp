@@ -18,8 +18,8 @@ class InverseKinematics
 public:
   InverseKinematics() : joint_model_group_( nullptr ) { }
 
-  bool init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node,
-             rclcpp::Node::SharedPtr node, const std::string &group_name );
+  bool init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node, rclcpp::Node::SharedPtr node,
+             const std::string &group_name, const double robot_descriptions_loading_timeout );
   bool calcInvKin( const Eigen::Affine3d &pose, const std::vector<double> &seed,
                    std::vector<double> &solution );
   Eigen::Affine3d getEndEffectorPose( const std::vector<double> &joint_positions ) const;
