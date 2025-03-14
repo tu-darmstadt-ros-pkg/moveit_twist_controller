@@ -39,9 +39,14 @@ moveit_twist_controller:
 
   current_limits:
     __map_arm_joints:
-      limit:
+      compliant_limit:
         type: double
         description: "Current limits for each joint in the group in Ampere. 'request_current_interface' must be true."
+        read_only: true
+      stiff_limit:
+        type: double
+        description: "Default current limit for each joint in the group in Ampere. Will be set if current interface requested but compliant mode is off."
+        read_only: true
 
   reject_if_velocity_limits_violated:
       type: bool

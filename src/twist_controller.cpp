@@ -378,9 +378,10 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     success &= setCommand( goal_state_[i], arm_joint_names_[i], "position" );
     // if current interfaces requested, write current limit, write 0 if current limits not enabled
     if ( params_.request_current_interface ) {
-      const double limit = set_current_limits_
-                               ? params_.current_limits.arm_joints_map[arm_joint_names_[i]].limit
-                               : 0.0;
+      const double limit =
+          set_current_limits_
+              ? params_.current_limits.arm_joints_map[arm_joint_names_[i]].compliant_limit
+              : params_.current_limits.arm_joints_map[arm_joint_names_[i]].stiff_limit;
       success &= setCommand( limit, arm_joint_names_[i], "current" );
     }
   }
