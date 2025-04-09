@@ -127,20 +127,37 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     // Twist command subscription
     twist_cmd_sub_ = get_node()->create_subscription<geometry_msgs::msg::TwistStamped>(
         "~/eef_cmd", 10, [this]( const geometry_msgs::msg::TwistStamped::SharedPtr twist_msg ) {
-          twist_.linear.x() = twist_msg->twist.linear.x; // TODO: store frame
-          twist_.linear.y() = twist_msg->twist.linear.y;
-          twist_.linear.z() = twist_msg->twist.linear.z;
-          twist_.angular.x() = twist_msg->twist.angular.x;
-          twist_.angular.y() = twist_msg->twist.angular.y;
-          twist_.angular.z() = twist_msg->twist.angular.z;
+          // Transform the twist into the eef tip frame
+          geometry_msgs::msg::TransformStamped transform_stamped;
+          try {
+            transform_stamped = tf_buffer_->lookupTransform(
+                ik_.getTipFrame(), twist_msg->header.frame_id, tf2::TimePointZero );
+          } catch ( tf2::TransformException &ex ) {
+            RCLCPP_WARN( get_node()->get_logger(), "%s", ex.what() );
+            return;
+          }
+
+          const tf2::Quaternion tf2_quat(
+              transform_stamped.transform.rotation.x, transform_stamped.transform.rotation.y,
+              transform_stamped.transform.rotation.z, transform_stamped.transform.rotation.w );
+          const tf2::Matrix3x3 rotation( tf2_quat );
+
+          const tf2::Vector3 lin_in( twist_msg->twist.linear.x, twist_msg->twist.linear.y,
+                                     twist_msg->twist.linear.z );
+          const tf2::Vector3 lin_out = rotation * lin_in;
+
+          const tf2::Vector3 ang_in( twist_msg->twist.angular.x, twist_msg->twist.angular.y,
+                                     twist_msg->twist.angular.z );
+          const tf2::Vector3 ang_out = rotation * ang_in;
+
+          twist_.linear = Eigen::Vector3d( lin_out.x(), lin_out.y(), lin_out.z() );
+          twist_.angular = Eigen::Vector3d( ang_out.x(), ang_out.y(), ang_out.z() );
         } );
 
     // Gripper speed subscription
     gripper_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64>(
-        "~/gripper_cmd", 10, [this]( const std_msgs::msg::Float64::SharedPtr msg ) {
-          gripper_speed_ = msg->data;
-          ;
-        } );
+        "~/gripper_cmd", 10,
+        [this]( const std_msgs::msg::Float64::SharedPtr msg ) { gripper_speed_ = msg->data; } );
 
     // Services
     reset_pose_server_ = get_node()->create_service<std_srvs::srv::Empty>(
