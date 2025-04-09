@@ -127,19 +127,24 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     // Twist command subscription
     twist_cmd_sub_ = get_node()->create_subscription<geometry_msgs::msg::TwistStamped>(
         "~/eef_cmd", 10, [this]( const geometry_msgs::msg::TwistStamped::SharedPtr twist_msg ) {
-          // Transform the twist into the eef tip frame
-          geometry_msgs::msg::TransformStamped transform_stamped;
-          try {
-            transform_stamped = tf_buffer_->lookupTransform(
-                ik_.getTipFrame(), twist_msg->header.frame_id, tf2::TimePointZero );
-          } catch ( tf2::TransformException &ex ) {
-            RCLCPP_WARN( get_node()->get_logger(), "%s", ex.what() );
-            return;
+          tf2::Quaternion tf2_quat;
+          if ( twist_msg->header.frame_id.empty() ) {
+            tf2_quat = tf2::Quaternion::getIdentity();
+          } else {
+            // Transform the twist into the eef tip frame
+            geometry_msgs::msg::TransformStamped transform_stamped;
+            try {
+              transform_stamped = tf_buffer_->lookupTransform(
+                  ik_.getTipFrame(), twist_msg->header.frame_id, tf2::TimePointZero );
+            } catch ( tf2::TransformException &ex ) {
+              RCLCPP_WARN( get_node()->get_logger(), "%s", ex.what() );
+              return;
+            }
+            tf2_quat = tf2::Quaternion(
+                transform_stamped.transform.rotation.x, transform_stamped.transform.rotation.y,
+                transform_stamped.transform.rotation.z, transform_stamped.transform.rotation.w );
           }
 
-          const tf2::Quaternion tf2_quat(
-              transform_stamped.transform.rotation.x, transform_stamped.transform.rotation.y,
-              transform_stamped.transform.rotation.z, transform_stamped.transform.rotation.w );
           const tf2::Matrix3x3 rotation( tf2_quat );
 
           const tf2::Vector3 lin_in( twist_msg->twist.linear.x, twist_msg->twist.linear.y,
