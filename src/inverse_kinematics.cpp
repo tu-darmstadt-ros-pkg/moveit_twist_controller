@@ -175,6 +175,11 @@ std::string InverseKinematics::getBaseFrame() const
   return joint_model_group_->getSolverInstance()->getBaseFrame();
 }
 
+std::string InverseKinematics::getTipFrame() const
+{
+  return joint_model_group_->getSolverInstance()->getTipFrame();
+}
+
 std::string InverseKinematics::moveitErrCodeToString( const int32_t code )
 {
   switch ( code ) {
