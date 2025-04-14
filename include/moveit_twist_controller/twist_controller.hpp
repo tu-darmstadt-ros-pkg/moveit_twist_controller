@@ -72,6 +72,9 @@ private:
   /// Pose has to be relative to base frame
   geometry_msgs::msg::PoseStamped getPoseInFrame( const Eigen::Affine3d &pose,
                                                   const std::string &frame );
+  bool calculateInverseKinematicsConsideringVelocityLimits( Eigen::Affine3d &new_eef_pose,
+                                                            const Eigen::Affine3d &old_eef_pose,
+                                                            const rclcpp::Duration &period );
 
   bool initialized_ = false;
   bool enabled_;

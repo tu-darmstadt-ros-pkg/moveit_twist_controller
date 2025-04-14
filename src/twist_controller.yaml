@@ -32,12 +32,15 @@ moveit_twist_controller:
       }
     }
 
-  reject_if_velocity_limits_violated:
+  velocity_limits:
     {
-      type: bool,
-      default_value: true,
-      description: "Reject commands that violate the velocity limits.",
-      read_only: false
+      type: double_array,
+      default_value: [],
+      description: "Velocity limits in rad/s for the joints in the group. If not set, the default velocity limits from the srdf are used.",
+      read_only: true,
+        validation: {
+          lower_element_bounds<>: [0.0],
+        }
     }
 
   robot_descriptions_loading_timeout:
