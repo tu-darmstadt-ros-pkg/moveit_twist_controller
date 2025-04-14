@@ -78,8 +78,6 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     else if ( params.free_angle == "z" )
       free_angle_ = 2;
 
-    reject_if_velocity_limits_violated_ = params.reject_if_velocity_limits_violated;
-
     // create a node to initialize the IK solver
     moveit_init_node_ = std::make_shared<rclcpp::Node>(
         get_node()->get_name() + std::string( "_moveit_init" ), get_node()->get_namespace() );
@@ -103,7 +101,15 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
         return controller_interface::CallbackReturn::ERROR;
       }
     }
-    joint_velocity_limits_ = ik_.getJointVelocityLimits();
+    joint_velocity_limits_ = params.velocity_limits;
+    if ( const auto srdf_limits = ik_.getJointVelocityLimits();
+         srdf_limits.size() != joint_velocity_limits_.size() ) {
+      RCLCPP_WARN( get_node()->get_logger(),
+                   "The given velocity limits (%lu) do not match the "
+                   "velocity limits from the SRDF (%lu). Using the SRDF limits.",
+                   joint_velocity_limits_.size(), srdf_limits.size() );
+      joint_velocity_limits_ = srdf_limits;
+    }
     goal_state_.resize( arm_joint_names_.size() );
     current_joint_angles_.resize( joint_names_.size() );
     current_arm_joint_angles.resize( arm_joint_names_.size() );
@@ -237,7 +243,6 @@ MoveitTwistController::on_activate( const rclcpp_lifecycle::State & /*previous_s
     gripper_pos_ = 0.0;
   }
   gripper_speed_ = 0.0;
-
   initialized_ = true;
   enabled_ = true;
 
@@ -324,16 +329,65 @@ double MoveitTwistController::computeJointAngleDiff( const double angle_1, const
   return diff;
 }
 
+bool MoveitTwistController::calculateInverseKinematicsConsideringVelocityLimits(
+    Eigen::Affine3d &new_eef_pose, const Eigen::Affine3d &old_eef_pose,
+    const rclcpp::Duration &period )
+{
+  double factor = 1.0;
+  int count = 0;
+  constexpr int max_iterations = 3;
+  constexpr double multiplicator = 0.5;
+
+  while ( count < max_iterations ) {
+    // Try IK
+    if ( ik_.calcInvKin( new_eef_pose, previous_goal_state_, goal_state_ ) ) {
+      double max_velocity_factor = 0;
+      for ( size_t i = 0; i < goal_state_.size(); ++i ) {
+        const double angle_diff =
+            std::abs( computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] ) );
+        max_velocity_factor = std::max(
+            max_velocity_factor, angle_diff / ( joint_velocity_limits_[i] * period.seconds() ) );
+        /*if ( angle_diff / ( joint_velocity_limits_[i] * period.seconds() ) > 1.0 ) {
+          RCLCPP_WARN(
+              get_node()->get_logger(), "Joint %s: Max change in joint angles is > 1.0 Old State: %f, New State: %f, angle diff %f",
+              arm_joint_names_[i].c_str(), previous_goal_state_[i], goal_state_[i], angle_diff );
+        }*/
+      }
+      if ( max_velocity_factor <= 1.0 ) {
+        return true;
+      }
+    }
+
+    factor *= multiplicator;
+    count++;
+
+    // Interpolate translation
+    const Eigen::Vector3d interp_translation =
+        old_eef_pose.translation() +
+        factor * ( new_eef_pose.translation() - old_eef_pose.translation() );
+
+    // Interpolate rotation using slerp
+    Eigen::Quaterniond old_q( old_eef_pose.rotation() );
+    Eigen::Quaterniond new_q( new_eef_pose.rotation() );
+    Eigen::Quaterniond interp_q = old_q.slerp( factor, new_q );
+
+    // Create interpolated pose
+    new_eef_pose.linear() = interp_q.toRotationMatrix();
+    new_eef_pose.translation() = interp_translation;
+  }
+  return false;
+}
+
 void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclcpp::Duration &period )
 {
-  Eigen::Affine3d old_goal = ee_goal_pose_;
+  const Eigen::Affine3d old_goal = ee_goal_pose_;
   previous_goal_state_ = goal_state_;
 
   // Compute new goal pose
   computeNewGoalPose( period );
 
   // Compute IK
-  if ( ik_.calcInvKin( ee_goal_pose_, previous_goal_state_, goal_state_ ) ) {
+  if ( calculateInverseKinematicsConsideringVelocityLimits( ee_goal_pose_, old_goal, period ) ) {
     contact_map_.clear();
     sensor_msgs::msg::JointState joint_state;
     joint_state.name = joint_names_;
@@ -346,35 +400,9 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     }
   } else {
     // IK failed
-    ee_goal_pose_ = old_goal;
+    ee_goal_pose_ = ik_.getEndEffectorPose( previous_goal_state_ );
     goal_state_ = previous_goal_state_;
     RCLCPP_WARN( get_node()->get_logger(), "IK failed." );
-  }
-  // Make sure that the change in joint angles is not too large -> velocity limits
-  double max_velocity_factor = 0;
-  for ( size_t i = 0; i < goal_state_.size(); ++i ) {
-    const double angle_diff =
-        std::abs( computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] ) );
-    max_velocity_factor = std::max( max_velocity_factor,
-                                    angle_diff / ( joint_velocity_limits_[i] * period.seconds() ) );
-    if ( angle_diff / ( joint_velocity_limits_[i] * period.seconds() ) > 1.0 ) {
-      RCLCPP_WARN(
-          get_node()->get_logger(), "Joint %s: Max change in joint angles is > 1.0 Old State: %f, New State: %f, angle diff %f",
-          arm_joint_names_[i].c_str(), previous_goal_state_[i], goal_state_[i], angle_diff );
-    }
-  }
-
-  if ( reject_if_velocity_limits_violated_ && max_velocity_factor > 1.0 ) {
-    RCLCPP_WARN( get_node()->get_logger(), "Max velocity factor: %f. Rejected goal state.",
-                 max_velocity_factor );
-    reset_pose_ = true;
-    goal_state_ = previous_goal_state_;
-  } else {
-    // avoid jumps in joint angles especially in the continuous joints!!
-    for ( size_t i = 0; i < goal_state_.size(); ++i ) {
-      goal_state_[i] =
-          previous_goal_state_[i] + computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] );
-    }
   }
 
   bool success = true;
