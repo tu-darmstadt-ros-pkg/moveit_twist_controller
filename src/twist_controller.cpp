@@ -114,12 +114,8 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     current_joint_angles_.resize( joint_names_.size() );
     current_arm_joint_angles.resize( arm_joint_names_.size() );
     previous_goal_state_.resize( arm_joint_names_.size() );
-    RCLCPP_INFO( get_node()->get_logger(), "goal_state_ size: %lu", goal_state_.size() );
-    RCLCPP_INFO( get_node()->get_logger(), "previous_goal_state_ size: %lu",
-                 previous_goal_state_.size() );
 
     gripper_joint_name_ = params.gripper_joint_name;
-    RCLCPP_INFO( get_node()->get_logger(), "Gripper joint: %s", gripper_joint_name_.c_str() );
     if ( !loadGripperJointLimits() ) {
       return controller_interface::CallbackReturn::ERROR;
     }
@@ -338,7 +334,7 @@ bool MoveitTwistController::calculateInverseKinematicsConsideringVelocityLimits(
   constexpr int max_iterations = 3;
   constexpr double multiplicator = 0.5;
 
-  while ( count < max_iterations ) {
+  while ( count++ < max_iterations ) {
     // Try IK
     if ( ik_.calcInvKin( new_eef_pose, previous_goal_state_, goal_state_ ) ) {
       double max_velocity_factor = 0;
@@ -347,11 +343,6 @@ bool MoveitTwistController::calculateInverseKinematicsConsideringVelocityLimits(
             std::abs( computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] ) );
         max_velocity_factor = std::max(
             max_velocity_factor, angle_diff / ( joint_velocity_limits_[i] * period.seconds() ) );
-        /*if ( angle_diff / ( joint_velocity_limits_[i] * period.seconds() ) > 1.0 ) {
-          RCLCPP_WARN(
-              get_node()->get_logger(), "Joint %s: Max change in joint angles is > 1.0 Old State: %f, New State: %f, angle diff %f",
-              arm_joint_names_[i].c_str(), previous_goal_state_[i], goal_state_[i], angle_diff );
-        }*/
       }
       if ( max_velocity_factor <= 1.0 ) {
         return true;
@@ -359,7 +350,6 @@ bool MoveitTwistController::calculateInverseKinematicsConsideringVelocityLimits(
     }
 
     factor *= multiplicator;
-    count++;
 
     // Interpolate translation
     const Eigen::Vector3d interp_translation =
@@ -396,13 +386,13 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     if ( !collision_free ) {
       ee_goal_pose_ = old_goal;
       goal_state_ = previous_goal_state_;
-      RCLCPP_WARN( get_node()->get_logger(), "Collision detected." );
+      RCLCPP_DEBUG( get_node()->get_logger(), "Collision detected." );
     }
   } else {
     // IK failed
     ee_goal_pose_ = ik_.getEndEffectorPose( previous_goal_state_ );
     goal_state_ = previous_goal_state_;
-    RCLCPP_WARN( get_node()->get_logger(), "IK failed." );
+    RCLCPP_DEBUG( get_node()->get_logger(), "IK failed." );
   }
 
   bool success = true;
@@ -506,8 +496,6 @@ bool MoveitTwistController::loadGripperJointLimits()
     RCLCPP_WARN( get_node()->get_logger(), "Failed to load gripper joint limits." );
     return false;
   }
-  RCLCPP_INFO( get_node()->get_logger(), "Gripper joint limits: %f %f", gripper_lower_limit_,
-               gripper_upper_limit_ );
   return true;
 }
 
