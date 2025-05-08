@@ -34,7 +34,8 @@ public:
   std::vector<std::string> getAllJointNames() const;
   std::string getBaseFrame() const;
   std::string getTipFrame() const;
-  bool getJointLimits( const std::string &joint_name, double &lower, double &upper ) const;
+  bool getJointLimits( const std::string &joint_name, double &lower, double &upper,
+                       double &velocity ) const;
   std::vector<double> getJointVelocityLimits() const;
 
 private:

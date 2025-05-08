@@ -12,9 +12,10 @@ namespace moveit_twist_controller
 MoveitTwistController::MoveitTwistController()
     : controller_interface::ControllerInterface(), initialized_( false ), enabled_( false ),
       reset_pose_( false ), reset_tool_center_( false ), move_tool_center_( false ),
-      max_speed_gripper_( 0 ), free_angle_( -1 ), tool_center_offset_( Eigen::Affine3d::Identity() ),
-      gripper_pos_( 0.0 ), gripper_speed_( 0.0 ), joint_state_received_( false ),
-      gripper_upper_limit_( 0 ), gripper_lower_limit_( 0 ), hold_pose_( false )
+      max_speed_gripper_( 0 ), free_angle_( -1 ),
+      tool_center_offset_( Eigen::Affine3d::Identity() ), gripper_pos_( 0.0 ),
+      gripper_cmd_speed_( 0.0 ), joint_state_received_( false ), gripper_upper_limit_( 0 ),
+      gripper_lower_limit_( 0 ), gripper_max_velocity_limit_( 0 ), hold_pose_( false )
 {
 }
 
@@ -78,6 +79,8 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     else if ( params.free_angle == "z" )
       free_angle_ = 2;
 
+    reject_if_velocity_limits_violated_ = params.reject_if_velocity_limits_violated;
+    gripper_mode_ = params.gripper_mode;
     velocity_limit_satisfaction_max_iterations_ = params.velocity_limit_satisfaction_max_iterations;
     velocity_limit_satisfaction_multiplicator_ = params.velocity_limit_satisfaction_multiplicator;
 
@@ -165,9 +168,13 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
         } );
 
     // Gripper speed subscription
-    gripper_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64>(
+    gripper_vel_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64>(
         "~/gripper_cmd", 10,
-        [this]( const std_msgs::msg::Float64::SharedPtr msg ) { gripper_speed_ = msg->data; } );
+        [this]( const std_msgs::msg::Float64::SharedPtr msg ) { gripper_cmd_speed_ = msg->data; } );
+
+    gripper_pos_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64>(
+        "~/gripper_pos_cmd", 10,
+        [this]( const std_msgs::msg::Float64::SharedPtr msg ) { gripper_cmd_pos_ = msg->data; } );
 
     // Services
     reset_pose_server_ = get_node()->create_service<std_srvs::srv::Empty>(
@@ -241,7 +248,8 @@ MoveitTwistController::on_activate( const rclcpp_lifecycle::State & /*previous_s
   } else {
     gripper_pos_ = 0.0;
   }
-  gripper_speed_ = 0.0;
+  gripper_cmd_speed_ = 0.0;
+
   initialized_ = true;
   enabled_ = true;
 
@@ -475,8 +483,24 @@ bool MoveitTwistController::computeNewGoalPose( const rclcpp::Duration &period )
 void MoveitTwistController::updateGripper( const rclcpp::Time & /*time*/,
                                            const rclcpp::Duration &period )
 {
-  gripper_pos_ += period.seconds() * gripper_speed_;
-  gripper_pos_ = std::min( gripper_upper_limit_, std::max( gripper_lower_limit_, gripper_pos_ ) );
+  if ( gripper_mode_ == "velocity" ) {
+    gripper_pos_ += period.seconds() * gripper_cmd_speed_;
+    gripper_pos_ = std::min( gripper_upper_limit_, std::max( gripper_lower_limit_, gripper_pos_ ) );
+  } else if ( gripper_mode_ == "position" ) {
+    // use gripper_pose_cmd but make sure the velocity is not too high
+    double required_vel = ( gripper_cmd_pos_ - gripper_pos_ ) / period.seconds();
+    // make sure required vel is smaller than max velocity
+    if ( std::abs( required_vel ) > gripper_max_velocity_limit_ ) {
+      if ( required_vel > 0 )
+        required_vel = gripper_max_velocity_limit_;
+      else
+        required_vel = -gripper_max_velocity_limit_;
+    }
+    gripper_pos_ += period.seconds() * required_vel;
+    gripper_pos_ = std::min( gripper_upper_limit_, std::max( gripper_lower_limit_, gripper_pos_ ) );
+  } else {
+    RCLCPP_WARN( get_node()->get_logger(), "Invalid gripper mode." );
+  }
   bool success = false;
   // Write gripper command
   auto it = std::find_if( command_interfaces_.begin(), command_interfaces_.end(),
@@ -493,7 +517,8 @@ void MoveitTwistController::updateGripper( const rclcpp::Time & /*time*/,
 
 bool MoveitTwistController::loadGripperJointLimits()
 {
-  if ( !ik_.getJointLimits( gripper_joint_name_, gripper_lower_limit_, gripper_upper_limit_ ) ) {
+  if ( !ik_.getJointLimits( gripper_joint_name_, gripper_lower_limit_, gripper_upper_limit_,
+                            gripper_max_velocity_limit_ ) ) {
     RCLCPP_WARN( get_node()->get_logger(), "Failed to load gripper joint limits." );
     return false;
   }
