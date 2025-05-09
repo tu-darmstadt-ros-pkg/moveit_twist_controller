@@ -110,6 +110,9 @@ private:
   double gripper_upper_limit_;
   double gripper_lower_limit_;
 
+  int64_t velocity_limit_satisfaction_max_iterations_;
+  double velocity_limit_satisfaction_multiplicator_;
+
   bool reject_if_velocity_limits_violated_ = true;
 
   InverseKinematics ik_;

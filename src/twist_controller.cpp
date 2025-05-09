@@ -78,6 +78,9 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     else if ( params.free_angle == "z" )
       free_angle_ = 2;
 
+    velocity_limit_satisfaction_max_iterations_ = params.velocity_limit_satisfaction_max_iterations;
+    velocity_limit_satisfaction_multiplicator_ = params.velocity_limit_satisfaction_multiplicator;
+
     // create a node to initialize the IK solver
     moveit_init_node_ = std::make_shared<rclcpp::Node>(
         get_node()->get_name() + std::string( "_moveit_init" ), get_node()->get_namespace() );
@@ -331,10 +334,8 @@ bool MoveitTwistController::calculateInverseKinematicsConsideringVelocityLimits(
 {
   double factor = 1.0;
   int count = 0;
-  constexpr int max_iterations = 3;
-  constexpr double multiplicator = 0.5;
 
-  while ( count++ < max_iterations ) {
+  while ( count++ < velocity_limit_satisfaction_max_iterations_ ) {
     // Try IK
     if ( ik_.calcInvKin( new_eef_pose, previous_goal_state_, goal_state_ ) ) {
       double max_velocity_factor = 0;
@@ -349,7 +350,7 @@ bool MoveitTwistController::calculateInverseKinematicsConsideringVelocityLimits(
       }
     }
 
-    factor *= multiplicator;
+    factor *= velocity_limit_satisfaction_multiplicator_;
 
     // Interpolate translation
     const Eigen::Vector3d interp_translation =

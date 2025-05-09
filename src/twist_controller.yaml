@@ -54,3 +54,24 @@ moveit_twist_controller:
       }
     }
 
+  velocity_limit_satisfaction_max_iterations:
+    {
+      type: int,
+      default_value: 3,
+      description: "Maximum number of iterations of the velocity limit satisfaction algorithm.",
+      read_only: false,
+      validation: {
+        gt<>: 0
+      }
+    }
+
+  velocity_limit_satisfaction_multiplicator:
+    {
+    type: double,
+    default_value: 0.5,
+    description: "Multiplicator for the velocity limit satisfaction algorithm. (0,1)",
+    read_only: false,
+    validation: {
+      bounds<>:[0.0, 1.0]
+      }
+    }
