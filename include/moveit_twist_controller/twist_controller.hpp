@@ -82,7 +82,7 @@ private:
   bool reset_tool_center_;
   bool move_tool_center_;
 
-  std::string gripper_mode_;
+  std::string gripper_cmd_mode_;
   double max_speed_gripper_;
   int free_angle_;
 
@@ -116,8 +116,6 @@ private:
   int64_t velocity_limit_satisfaction_max_iterations_;
   double velocity_limit_satisfaction_multiplicator_;
 
-  bool reject_if_velocity_limits_violated_ = true;
-
   InverseKinematics ik_;
   bool hold_pose_;
   geometry_msgs::msg::PoseStamped hold_goal_pose_;
@@ -139,6 +137,7 @@ private:
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   std::shared_ptr<moveit_twist_controller::ParamListener> param_listener_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
 };
 
 } // namespace moveit_twist_controller

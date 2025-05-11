@@ -76,7 +76,7 @@ moveit_twist_controller:
       }
     }
 
-  gripper_mode:
+  gripper_cmd_mode:
     {
       type: string,
       default_value: "velocity",
