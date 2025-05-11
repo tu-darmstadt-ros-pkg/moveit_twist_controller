@@ -77,14 +77,15 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
   return true;
 }
 
-bool InverseKinematics::getJointLimits( const std::string &joint_name, double &lower,
-                                        double &upper ) const
+bool InverseKinematics::getJointLimits( const std::string &joint_name, double &lower, double &upper,
+                                        double &velocity ) const
 {
   if ( robot_model_ ) {
     if ( const auto joint_model = robot_model_->getJointModel( joint_name ) ) {
       const auto bounds = joint_model->getVariableBounds( joint_model->getVariableNames()[0] );
       lower = bounds.min_position_;
       upper = bounds.max_position_;
+      velocity = bounds.max_velocity_;
       return true;
     }
   }

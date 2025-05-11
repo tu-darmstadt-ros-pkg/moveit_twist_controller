@@ -67,11 +67,25 @@ moveit_twist_controller:
 
   velocity_limit_satisfaction_multiplicator:
     {
-    type: double,
-    default_value: 0.5,
-    description: "Multiplicator for the velocity limit satisfaction algorithm. (0,1)",
-    read_only: false,
-    validation: {
-      bounds<>:[0.0, 1.0]
+      type: double,
+      default_value: 0.5,
+      description: "Multiplicator for the velocity limit satisfaction algorithm. (0,1)",
+      read_only: false,
+      validation: {
+        bounds<>: [ 0.0, 1.0 ]
       }
     }
+
+  gripper_cmd_mode:
+    {
+      type: string,
+      default_value: "velocity",
+      description: "Mode of the gripper. 'velocity' or 'position'.",
+      read_only: false,
+      validation: {
+        one_of<>: [ [ "velocity", "position" ] ]
+      }
+    }
+
+
+

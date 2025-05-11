@@ -82,6 +82,7 @@ private:
   bool reset_tool_center_;
   bool move_tool_center_;
 
+  std::string gripper_cmd_mode_;
   double max_speed_gripper_;
   int free_angle_;
 
@@ -95,7 +96,8 @@ private:
 
   Twist twist_;
   double gripper_pos_;
-  double gripper_speed_;
+  double gripper_cmd_speed_;
+  double gripper_cmd_pos_;
   std::vector<double> joint_velocity_limits_;
 
   std::vector<std::string> joint_names_;
@@ -109,11 +111,10 @@ private:
   std::string gripper_joint_name_;
   double gripper_upper_limit_;
   double gripper_lower_limit_;
+  double gripper_max_velocity_limit_;
 
   int64_t velocity_limit_satisfaction_max_iterations_;
   double velocity_limit_satisfaction_multiplicator_;
-
-  bool reject_if_velocity_limits_violated_ = true;
 
   InverseKinematics ik_;
   bool hold_pose_;
@@ -122,7 +123,8 @@ private:
   rclcpp::Node::SharedPtr moveit_init_node_;
 
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_cmd_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gripper_cmd_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gripper_pos_cmd_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gripper_vel_cmd_sub_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_pose_server_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_tool_center_server_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr hold_pose_server_;
@@ -135,6 +137,7 @@ private:
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   std::shared_ptr<moveit_twist_controller::ParamListener> param_listener_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
 };
 
 } // namespace moveit_twist_controller
