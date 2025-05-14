@@ -12,9 +12,9 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
 {
   node_ = node;                     // NOT SPINNING -> NO CALLBACKS BUT PARAMETERS SHOULD WORK
   lifecycle_node_ = lifecycle_node; // SPINNING -> CALLBACKS WORK
-  RCLCPP_INFO( node_->get_logger(), "Initializing inverse kinematics controller in namespace '%s'.",
-               node_->get_namespace() );
-  RCLCPP_INFO( node_->get_logger(), "Moveit Group name: %s", group_name.c_str() );
+  RCLCPP_DEBUG( node_->get_logger(), "Initializing inverse kinematics controller in namespace '%s'.",
+                node_->get_namespace() );
+  RCLCPP_DEBUG( node_->get_logger(), "Moveit Group name: %s", group_name.c_str() );
   auto robot_description =
       getParameterFromTopic( "robot_description", robot_descriptions_loading_timeout );
   auto robot_description_semantic =
@@ -59,7 +59,7 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
                   joint_model_group_->getName().c_str() );
     return false;
   }
-  RCLCPP_INFO( node_->get_logger(), "IK solver: %s", typeid( *solver ).name() );
+  RCLCPP_DEBUG( node_->get_logger(), "IK solver: %s", typeid( *solver ).name() );
   tip_frame_ = solver->getTipFrame();
 
   // Debug output
@@ -72,19 +72,20 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
   for ( unsigned int i = 0; i < arm_joint_names_.size(); i++ ) {
     debug << i << ": " << arm_joint_names_[i] << std::endl;
   }
-  RCLCPP_INFO( node_->get_logger(), debug.str().c_str() );
+  RCLCPP_DEBUG( node_->get_logger(), debug.str().c_str() );
 
   return true;
 }
 
-bool InverseKinematics::getJointLimits( const std::string &joint_name, double &lower,
-                                        double &upper ) const
+bool InverseKinematics::getJointLimits( const std::string &joint_name, double &lower, double &upper,
+                                        double &velocity ) const
 {
   if ( robot_model_ ) {
     if ( const auto joint_model = robot_model_->getJointModel( joint_name ) ) {
       const auto bounds = joint_model->getVariableBounds( joint_model->getVariableNames()[0] );
       lower = bounds.min_position_;
       upper = bounds.max_position_;
+      velocity = bounds.max_velocity_;
       return true;
     }
   }
@@ -107,12 +108,12 @@ bool InverseKinematics::calcInvKin( const Eigen::Affine3d &pose, const std::vect
   solution.resize( arm_joint_names_.size() );
   if ( !joint_model_group_->getSolverInstance()->searchPositionIK( pose_msg, seed, 0.01, solution,
                                                                    error_code ) ) {
-    RCLCPP_WARN_STREAM( node_->get_logger(),
-                        "Computing IK from "
-                            << joint_model_group_->getSolverInstance()->getBaseFrame() << " to "
-                            << joint_model_group_->getSolverInstance()->getTipFrame()
-                            << " failed. Error code: " << error_code.val << " ("
-                            << moveitErrCodeToString( error_code.val ) << ")" );
+    RCLCPP_DEBUG_STREAM( node_->get_logger(),
+                         "Computing IK from "
+                             << joint_model_group_->getSolverInstance()->getBaseFrame() << " to "
+                             << joint_model_group_->getSolverInstance()->getTipFrame()
+                             << " failed. Error code: " << error_code.val << " ("
+                             << moveitErrCodeToString( error_code.val ) << ")" );
     return false;
   }
 
@@ -173,6 +174,11 @@ std::vector<std::string> InverseKinematics::getAllJointNames() const { return jo
 std::string InverseKinematics::getBaseFrame() const
 {
   return joint_model_group_->getSolverInstance()->getBaseFrame();
+}
+
+std::string InverseKinematics::getTipFrame() const
+{
+  return joint_model_group_->getSolverInstance()->getTipFrame();
 }
 
 std::string InverseKinematics::moveitErrCodeToString( const int32_t code )
