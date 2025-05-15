@@ -441,9 +441,9 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     }
   } else {
     // IK failed
-    ee_goal_pose_ = old_goal;
+    ee_goal_pose_ = ik_.getEndEffectorPose( previous_goal_state_ );
     goal_state_ = previous_goal_state_;
-    RCLCPP_WARN( get_node()->get_logger(), "IK failed." );
+    RCLCPP_DEBUG( get_node()->get_logger(), "IK failed." );
   }
 
   bool success = true;

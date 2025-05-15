@@ -48,7 +48,6 @@ moveit_twist_controller:
         description: "Default current limit for each joint in the group in Ampere. Will be set if current interface requested but compliant mode is off."
         read_only: true
 
-
   velocity_limits:
       type: double_array
       default_value: []
