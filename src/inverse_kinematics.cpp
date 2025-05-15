@@ -80,6 +80,7 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
 bool InverseKinematics::getJointLimits( const std::string &joint_name, double &lower, double &upper,
                                         double &velocity ) const
 {
+  RCLCPP_INFO( node_->get_logger(), "Loading joint limits for %s", joint_name.c_str() );
   if ( robot_model_ ) {
     if ( const auto joint_model = robot_model_->getJointModel( joint_name ) ) {
       const auto bounds = joint_model->getVariableBounds( joint_model->getVariableNames()[0] );

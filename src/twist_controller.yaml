@@ -48,21 +48,14 @@ moveit_twist_controller:
         description: "Default current limit for each joint in the group in Ampere. Will be set if current interface requested but compliant mode is off."
         read_only: true
 
-  reject_if_velocity_limits_violated:
-      type: bool
-      default_value: true
-      description: "Reject commands that violate the velocity limits."
-      read_only: false
+
   velocity_limits:
-    {
-      type: double_array,
-      default_value: [],
-      description: "Velocity limits in rad/s for the joints in the group. If not set, the default velocity limits from the srdf are used.",
-      read_only: true,
-        validation: {
-          lower_element_bounds<>: [0.0],
-        }
-    }
+      type: double_array
+      default_value: []
+      description: "Velocity limits in rad/s for the joints in the group. If not set, the default velocity limits from the srdf are used."
+      read_only: true
+      validation:
+        lower_element_bounds<>: [0.0]
 
   robot_descriptions_loading_timeout:
       type: double
@@ -73,37 +66,28 @@ moveit_twist_controller:
         gt<>: 0.0
 
   velocity_limit_satisfaction_max_iterations:
-    {
-      type: int,
-      default_value: 3,
-      description: "Maximum number of iterations of the velocity limit satisfaction algorithm.",
-      read_only: false,
-      validation: {
+      type: int
+      default_value: 3
+      description: "Maximum number of iterations of the velocity limit satisfaction algorithm."
+      read_only: false
+      validation:
         gt<>: 0
-      }
-    }
 
   velocity_limit_satisfaction_multiplicator:
-    {
-      type: double,
-      default_value: 0.5,
-      description: "Multiplicator for the velocity limit satisfaction algorithm. (0,1)",
-      read_only: false,
-      validation: {
+      type: double
+      default_value: 0.5
+      description: "Multiplicator for the velocity limit satisfaction algorithm. (0,1)"
+      read_only: false
+      validation:
         bounds<>: [ 0.0, 1.0 ]
-      }
-    }
 
   gripper_cmd_mode:
-    {
-      type: string,
-      default_value: "velocity",
-      description: "Mode of the gripper. 'velocity' or 'position'.",
-      read_only: false,
-      validation: {
+      type: string
+      default_value: "velocity"
+      description: "Mode of the gripper. 'velocity' or 'position'."
+      read_only: false
+      validation:
         one_of<>: [ [ "velocity", "position" ] ]
-      }
-    }
 
 
 

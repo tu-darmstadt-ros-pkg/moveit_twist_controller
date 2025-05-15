@@ -86,9 +86,7 @@ private:
   bool reset_tool_center_ = false;
   bool move_tool_center_ = false;
 
-  double max_speed_gripper_ = 0.0;
   int free_angle_ = -1;
-  std::string gripper_cmd_mode_;
 
   Eigen::Affine3d tool_center_offset_;
   Eigen::Affine3d tool_goal_pose_;
@@ -101,8 +99,8 @@ private:
   Twist twist_;
   double gripper_pos_ = 0.0;
   double gripper_speed_ = 0.0;
-  double gripper_cmd_speed_;
-  double gripper_cmd_pos_;
+  double gripper_cmd_speed_ = 0.0;
+  double gripper_cmd_pos_ = 0.0;
   std::vector<double> joint_velocity_limits_;
 
   std::vector<std::string> joint_names_;
@@ -116,18 +114,14 @@ private:
 
   double gripper_upper_limit_ = 0.0;
   double gripper_lower_limit_ = 0.0;
-  std::string gripper_joint_name_;
-  double gripper_max_velocity_limit_;
-
-  int64_t velocity_limit_satisfaction_max_iterations_;
-  double velocity_limit_satisfaction_multiplicator_;
+  double gripper_max_velocity_limit_ = 0.0;
 
   InverseKinematics ik_;
   bool hold_pose_ = false;
   geometry_msgs::msg::PoseStamped hold_goal_pose_;
 
-  moveit_twist_controller::Params params_;
-  std::shared_ptr<moveit_twist_controller::ParamListener> param_listener_;
+  Params params_;
+  std::shared_ptr<ParamListener> param_listener_;
   mutable std::map<std::string, size_t> joint_state_interface_mapping_;
   mutable std::map<std::string, size_t> joint_command_interface_mapping_;
 

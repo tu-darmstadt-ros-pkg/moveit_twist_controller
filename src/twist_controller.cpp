@@ -9,13 +9,7 @@
 namespace moveit_twist_controller
 {
 
-MoveitTwistController::MoveitTwistController()
-    : controller_interface::ControllerInterface(), initialized_( false ), enabled_( false ),
-      reset_pose_( false ), reset_tool_center_( false ), move_tool_center_( false ),
-      max_speed_gripper_( 0 ), free_angle_( -1 ), tool_center_offset_( Eigen::Affine3d::Identity() ),
-      gripper_pos_( 0.0 ), gripper_cmd_pos_( 0.0 ), gripper_cmd_speed_( 0.0 ),
-      joint_state_received_( false ), gripper_upper_limit_( 0 ), gripper_lower_limit_( 0 ),
-      gripper_max_velocity_limit_( 0 ), hold_pose_( false )
+MoveitTwistController::MoveitTwistController() : tool_center_offset_( Eigen::Affine3d::Identity() )
 {
 }
 
@@ -79,7 +73,7 @@ controller_interface::CallbackReturn MoveitTwistController::on_init()
                   result.successful = false;
                   result.reason = "gripper_cmd_mode must be either 'velocity' or 'position'";
                 } else {
-                  gripper_cmd_mode_ = param.as_string();
+                  params_.gripper_cmd_mode = param.as_string();
                 }
               } else {
                 result.successful = false;
@@ -111,10 +105,6 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     else if ( params_.free_angle == "z" )
       free_angle_ = 2;
 
-    gripper_cmd_mode_ = params.gripper_cmd_mode;
-    velocity_limit_satisfaction_max_iterations_ = params.velocity_limit_satisfaction_max_iterations;
-    velocity_limit_satisfaction_multiplicator_ = params.velocity_limit_satisfaction_multiplicator;
-
     // create a node to initialize the IK solver
     moveit_init_node_ = std::make_shared<rclcpp::Node>(
         get_node()->get_name() + std::string( "_moveit_init" ), get_node()->get_namespace() );
@@ -138,7 +128,7 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
         return controller_interface::CallbackReturn::ERROR;
       }
     }
-    joint_velocity_limits_ = params.velocity_limits;
+    joint_velocity_limits_ = params_.velocity_limits;
     if ( const auto srdf_limits = ik_.getJointVelocityLimits();
          srdf_limits.size() != joint_velocity_limits_.size() ) {
       RCLCPP_WARN( get_node()->get_logger(),
@@ -152,7 +142,6 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     current_arm_joint_angles.resize( arm_joint_names_.size() );
     previous_goal_state_.resize( arm_joint_names_.size() );
 
-    gripper_joint_name_ = params.gripper_joint_name;
     RCLCPP_INFO( get_node()->get_logger(), "Gripper joint: %s", params_.gripper_joint_name.c_str() );
     if ( !loadGripperJointLimits() ) {
       return controller_interface::CallbackReturn::ERROR;
@@ -160,6 +149,12 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
 
     // Current limit setup
     if ( params_.request_current_interface ) {
+      // make sure arm_joint_names and params_.arm_joint_names_map are the same
+      if ( params_.arm_joints.size() != arm_joint_names_.size() ) {
+        RCLCPP_ERROR( get_node()->get_logger(), "Arm joint specified in the config file do not "
+                                                "match the joints in the specified move_group" );
+        return controller_interface::CallbackReturn::ERROR;
+      }
       if ( params_.current_limits.arm_joints_map.size() != arm_joint_names_.size() ) {
         RCLCPP_ERROR( get_node()->get_logger(),
                       "Current limits size does not match arm joint names size" );
@@ -391,7 +386,7 @@ bool MoveitTwistController::calculateInverseKinematicsConsideringVelocityLimits(
   double factor = 1.0;
   int count = 0;
 
-  while ( count++ < velocity_limit_satisfaction_max_iterations_ ) {
+  while ( count++ < params_.velocity_limit_satisfaction_max_iterations ) {
     // Try IK
     if ( ik_.calcInvKin( new_eef_pose, previous_goal_state_, goal_state_ ) ) {
       double max_velocity_factor = 0;
@@ -406,7 +401,7 @@ bool MoveitTwistController::calculateInverseKinematicsConsideringVelocityLimits(
       }
     }
 
-    factor *= velocity_limit_satisfaction_multiplicator_;
+    factor *= params_.velocity_limit_satisfaction_multiplicator;
 
     // Interpolate translation
     const Eigen::Vector3d interp_translation =
@@ -449,28 +444,6 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     ee_goal_pose_ = old_goal;
     goal_state_ = previous_goal_state_;
     RCLCPP_WARN( get_node()->get_logger(), "IK failed." );
-  }
-  // Make sure that the change in joint angles is not too large -> velocity limits
-  double max_velocity_factor = 0;
-  for ( size_t i = 0; i < goal_state_.size(); ++i ) {
-    const double angle_diff =
-        std::abs( computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] ) );
-    max_velocity_factor = std::max( max_velocity_factor,
-                                    angle_diff / ( joint_velocity_limits_[i] * period.seconds() ) );
-    if ( angle_diff / ( joint_velocity_limits_[i] * period.seconds() ) > 1.0 ) {
-      RCLCPP_WARN(
-          get_node()->get_logger(), "Joint %s: Max change in joint angles is > 1.0 Old State: %f, New State: %f, angle diff %f",
-          arm_joint_names_[i].c_str(), previous_goal_state_[i], goal_state_[i], angle_diff );
-    }
-  }
-
-  if ( params_.reject_if_velocity_limits_violated && max_velocity_factor > 1.0 ) {
-    RCLCPP_WARN( get_node()->get_logger(), "Max velocity factor: %f. Rejected goal state.",
-                 max_velocity_factor );
-    reset_pose_ = true;
-    ee_goal_pose_ = ik_.getEndEffectorPose( previous_goal_state_ );
-    goal_state_ = previous_goal_state_;
-    RCLCPP_DEBUG( get_node()->get_logger(), "IK failed." );
   }
 
   bool success = true;
@@ -570,150 +543,138 @@ void MoveitTwistController::updateGripper( const rclcpp::Time & /*time*/,
 {
   gripper_pos_ += period.seconds() * gripper_speed_;
   gripper_pos_ = std::min( gripper_upper_limit_, std::max( gripper_lower_limit_, gripper_pos_ ) );
+
+  double applied_gripper_vel = 0.0;
+  if ( params_.gripper_cmd_mode == "velocity" ) {
+    applied_gripper_vel = gripper_cmd_speed_;
+  } else if ( params_.gripper_cmd_mode == "position" ) {
+    // use gripper_pose_cmd but make sure the velocity is not too high
+    applied_gripper_vel = std::clamp( ( gripper_cmd_pos_ - gripper_pos_ ) / period.seconds(),
+                                      -gripper_max_velocity_limit_, gripper_max_velocity_limit_ );
+  } else {
+    RCLCPP_ERROR( get_node()->get_logger(), "Invalid gripper mode." );
+    // applied_gripper_vel is zero
+  }
+  gripper_pos_ = std::clamp( applied_gripper_vel * period.seconds() + gripper_pos_,
+                             gripper_lower_limit_, gripper_upper_limit_ );
   if ( !setCommand( gripper_pos_, params_.gripper_joint_name, "position" ) ) {
-    double applied_gripper_vel = 0.0;
-    if ( gripper_cmd_mode_ == "velocity" ) {
-      applied_gripper_vel = gripper_cmd_speed_;
-    } else if ( gripper_cmd_mode_ == "position" ) {
-      // use gripper_pose_cmd but make sure the velocity is not too high
-      applied_gripper_vel = std::clamp( ( gripper_cmd_pos_ - gripper_pos_ ) / period.seconds(),
-                                        -gripper_max_velocity_limit_, gripper_max_velocity_limit_ );
-    } else {
-      RCLCPP_ERROR( get_node()->get_logger(), "Invalid gripper mode." );
-      // applied_gripper_vel is zero
-    }
-    gripper_pos_ = std::clamp( applied_gripper_vel * period.seconds() + gripper_pos_,
-                               gripper_lower_limit_, gripper_upper_limit_ );
-    bool success = false;
-    // Write gripper command
-    auto it = std::find_if( command_interfaces_.begin(), command_interfaces_.end(),
-                            [this]( const auto &iface ) {
-                              return iface.get_name() == gripper_joint_name_ + "/position";
-                            } );
-    if ( it != command_interfaces_.end() && !std::isnan( gripper_pos_ ) ) {
-      success = it->set_value( gripper_pos_ );
-    }
-    if ( !success ) {
-      RCLCPP_WARN( get_node()->get_logger(), "Failed to write gripper command to hardware." );
-    }
+    RCLCPP_WARN( get_node()->get_logger(), "Failed to write gripper command to hardware." );
+  }
+}
+
+bool MoveitTwistController::loadGripperJointLimits()
+{
+  if ( !ik_.getJointLimits( params_.gripper_joint_name, gripper_lower_limit_, gripper_upper_limit_,
+                            gripper_max_velocity_limit_ ) ) {
+    RCLCPP_WARN( get_node()->get_logger(), "Failed to load gripper joint limits." );
+    return false;
+  }
+  return true;
+}
+
+void MoveitTwistController::publishRobotState(
+    const std::vector<double> &arm_joint_states,
+    const collision_detection::CollisionResult::ContactMap &contact_map )
+{
+  sensor_msgs::msg::JointState joint_state;
+  joint_state.name = joint_names_;
+  joint_state.position = current_joint_angles_;
+  moveit::core::RobotState robot_state = ik_.getAsRobotState( joint_state, arm_joint_states );
+
+  // transform the base
+  geometry_msgs::msg::TransformStamped transform_stamped;
+  try {
+    transform_stamped =
+        tf_buffer_->lookupTransform( "world", ik_.getBaseFrame(), tf2::TimePointZero );
+  } catch ( tf2::TransformException &ex ) {
+    RCLCPP_WARN( get_node()->get_logger(), "%s", ex.what() );
+    return;
   }
 
-  bool MoveitTwistController::loadGripperJointLimits()
-  {
-    if ( !ik_.getJointLimits( params_.gripper_joint_name, gripper_lower_limit_,
-                              gripper_upper_limit_ ) ) {
-      if ( !ik_.getJointLimits( gripper_joint_name_, gripper_lower_limit_, gripper_upper_limit_,
-                                gripper_max_velocity_limit_ ) ) {
-        RCLCPP_WARN( get_node()->get_logger(), "Failed to load gripper joint limits." );
-        return false;
-      }
-      return true;
-    }
+  Eigen::Isometry3d pose = tf2::transformToEigen( transform_stamped.transform );
+  robot_state.setJointPositions( "world_virtual_joint", pose );
 
-    void MoveitTwistController::publishRobotState(
-        const std::vector<double> &arm_joint_states,
-        const collision_detection::CollisionResult::ContactMap &contact_map )
-    {
-      sensor_msgs::msg::JointState joint_state;
-      joint_state.name = joint_names_;
-      joint_state.position = current_joint_angles_;
-      moveit::core::RobotState robot_state = ik_.getAsRobotState( joint_state, arm_joint_states );
+  moveit_msgs::msg::DisplayRobotState display_robot_state;
+  moveit::core::robotStateToRobotStateMsg( robot_state, display_robot_state.state );
 
-      // transform the base
-      geometry_msgs::msg::TransformStamped transform_stamped;
-      try {
-        transform_stamped =
-            tf_buffer_->lookupTransform( "world", ik_.getBaseFrame(), tf2::TimePointZero );
-      } catch ( tf2::TransformException &ex ) {
-        RCLCPP_WARN( get_node()->get_logger(), "%s", ex.what() );
-        return;
-      }
+  // highlight links in collision
+  std_msgs::msg::ColorRGBA color;
+  color.a = 1.0;
+  color.r = 1.0;
+  color.g = 0.0;
+  color.b = 0.0;
 
-      Eigen::Isometry3d pose = tf2::transformToEigen( transform_stamped.transform );
-      robot_state.setJointPositions( "world_virtual_joint", pose );
+  for ( const auto &it : contact_map ) {
+    const std::string &link1 = it.first.first;
+    const std::string &link2 = it.first.second;
 
-      moveit_msgs::msg::DisplayRobotState display_robot_state;
-      moveit::core::robotStateToRobotStateMsg( robot_state, display_robot_state.state );
+    moveit_msgs::msg::ObjectColor object_color;
+    object_color.id = link1;
+    object_color.color = color;
+    display_robot_state.highlight_links.push_back( object_color );
 
-      // highlight links in collision
-      std_msgs::msg::ColorRGBA color;
-      color.a = 1.0;
-      color.r = 1.0;
-      color.g = 0.0;
-      color.b = 0.0;
+    object_color.id = link2;
+    object_color.color = color;
+    display_robot_state.highlight_links.push_back( object_color );
+  }
 
-      for ( const auto &it : contact_map ) {
-        const std::string &link1 = it.first.first;
-        const std::string &link2 = it.first.second;
+  robot_state_pub_->publish( display_robot_state );
+}
 
-        moveit_msgs::msg::ObjectColor object_color;
-        object_color.id = link1;
-        object_color.color = color;
-        display_robot_state.highlight_links.push_back( object_color );
+geometry_msgs::msg::PoseStamped MoveitTwistController::getPoseInFrame( const Eigen::Affine3d &pose,
+                                                                       const std::string &frame )
+{
+  geometry_msgs::msg::TransformStamped transform_stamped;
+  geometry_msgs::msg::PoseStamped pose_stamped;
+  pose_stamped.header.frame_id = frame;
 
-        object_color.id = link2;
-        object_color.color = color;
-        display_robot_state.highlight_links.push_back( object_color );
-      }
+  try {
+    transform_stamped = tf_buffer_->lookupTransform( frame, ik_.getBaseFrame(), tf2::TimePointZero );
+  } catch ( tf2::TransformException &ex ) {
+    RCLCPP_WARN( get_node()->get_logger(), "%s", ex.what() );
+    // Return pose in the base frame if transform fails.
+    pose_stamped.pose = tf2::toMsg( pose );
+    pose_stamped.header.stamp = get_node()->now();
+    return pose_stamped;
+  }
 
-      robot_state_pub_->publish( display_robot_state );
-    }
+  const Eigen::Affine3d frame_to_base = tf2::transformToEigen( transform_stamped.transform );
+  const Eigen::Affine3d frame_to_pose = frame_to_base * pose;
 
-    geometry_msgs::msg::PoseStamped MoveitTwistController::getPoseInFrame(
-        const Eigen::Affine3d &pose, const std::string &frame )
-    {
-      geometry_msgs::msg::TransformStamped transform_stamped;
-      geometry_msgs::msg::PoseStamped pose_stamped;
-      pose_stamped.header.frame_id = frame;
+  pose_stamped.header.stamp = transform_stamped.header.stamp;
+  pose_stamped.pose = tf2::toMsg( frame_to_pose );
+  return pose_stamped;
+}
 
-      try {
-        transform_stamped =
-            tf_buffer_->lookupTransform( frame, ik_.getBaseFrame(), tf2::TimePointZero );
-      } catch ( tf2::TransformException &ex ) {
-        RCLCPP_WARN( get_node()->get_logger(), "%s", ex.what() );
-        // Return pose in the base frame if transform fails.
-        pose_stamped.pose = tf2::toMsg( pose );
-        pose_stamped.header.stamp = get_node()->now();
-        return pose_stamped;
-      }
+void MoveitTwistController::publishStatus() const
+{
+  std_msgs::msg::Bool bool_msg;
+  bool_msg.data = enabled_;
+  enabled_pub_->publish( bool_msg );
+}
 
-      const Eigen::Affine3d frame_to_base = tf2::transformToEigen( transform_stamped.transform );
-      const Eigen::Affine3d frame_to_pose = frame_to_base * pose;
+void MoveitTwistController::hideRobotState() const
+{
+  moveit_msgs::msg::DisplayRobotState display_robot_state;
+  display_robot_state.hide = true;
+  robot_state_pub_->publish( display_robot_state );
+}
 
-      pose_stamped.header.stamp = transform_stamped.header.stamp;
-      pose_stamped.pose = tf2::toMsg( frame_to_pose );
-      return pose_stamped;
-    }
+void MoveitTwistController::updateDynamicParameters()
+{
+  const auto params = param_listener_->get_params();
+  // update current limits
+  if ( params_.current_limits.arm_joints_map.size() != arm_joint_names_.size() ) {
+    RCLCPP_ERROR( get_node()->get_logger(),
+                  "Current limits size does not match arm joint names size" );
+    return;
+  }
+  params_.current_limits = params_.current_limits;
+}
 
-    void MoveitTwistController::publishStatus() const
-    {
-      std_msgs::msg::Bool bool_msg;
-      bool_msg.data = enabled_;
-      enabled_pub_->publish( bool_msg );
-    }
-
-    void MoveitTwistController::hideRobotState() const
-    {
-      moveit_msgs::msg::DisplayRobotState display_robot_state;
-      display_robot_state.hide = true;
-      robot_state_pub_->publish( display_robot_state );
-    }
-
-    void MoveitTwistController::updateDynamicParameters()
-    {
-      const auto params = param_listener_->get_params();
-      // update current limits
-      if ( params.current_limits.arm_joints_map.size() != arm_joint_names_.size() ) {
-        RCLCPP_ERROR( get_node()->get_logger(),
-                      "Current limits size does not match arm joint names size" );
-        return;
-      }
-      params_.current_limits = params.current_limits;
-    }
-
-  } // namespace moveit_twist_controller
+} // namespace moveit_twist_controller
 
 #include <pluginlib/class_list_macros.hpp>
 
-  PLUGINLIB_EXPORT_CLASS( moveit_twist_controller::MoveitTwistController,
-                          controller_interface::ControllerInterface )
+PLUGINLIB_EXPORT_CLASS( moveit_twist_controller::MoveitTwistController,
+                        controller_interface::ControllerInterface )
