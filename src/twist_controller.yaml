@@ -36,7 +36,6 @@ moveit_twist_controller:
     description: "List of joint names in the group."
     read_only: true
 
-
   current_limits:
     __map_arm_joints:
       compliant_limit:
