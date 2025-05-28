@@ -351,7 +351,7 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
   updateGripper( time, period );
 
   // Visualization // TODO: make realtime safe
-  publishRobotState( goal_state_, contact_map_ );
+  // publishRobotState( goal_state_, contact_map_ );
 
   // Publish goal pose
   geometry_msgs::msg::PoseStamped goal_pose_msg;
