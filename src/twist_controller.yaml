@@ -1,91 +1,91 @@
 moveit_twist_controller:
   free_angle:
-    {
-      type: string,
-      default_value: "",
-      description: "Axis where the actual rotation is free. -1 means no free angle.",
-      read_only: false,
-      validation: {
-        one_of<>: [ [ "","x","y","z" ] ]
-      }
-    }
+    type: string
+    default_value: ""
+    description: "Axis where the actual rotation is free. -1 means no free angle."
+    read_only: true
+    validation:
+      one_of<>: [["","x","y","z"]]
 
   gripper_joint_name:
-    {
-      type: string,
-      default_value: "gripper_servo_joint",
-      description: "Name of the gripper joint in the urdf",
-      read_only: false,
-      validation: {
-        not_empty<>: [ ]
-      }
-    }
+    type: string
+    default_value: "gripper_servo_joint"
+    description: "Name of the gripper joint in the urdf"
+    read_only: true
+    validation:
+      not_empty<>: []
 
   group_name:
-    {
-      type: string,
-      default_value: "arm_group",
-      description: "Name of the group in the moveit configuration.",
-      read_only: false,
-      validation: {
-        not_empty<>: [ ]
-      }
-    }
+    type: string
+    default_value: "arm_group"
+    description: "Name of the group in the moveit configuration."
+    read_only: true
+    validation:
+      not_empty<>: [ ]
+
+  request_current_interface:
+    type: bool
+    default_value: false
+    description: "Request Current Interface per arm joint and provide service for current limit activation."
+    read_only: true
+
+
+  arm_joints:
+    type: string_array
+    default_value: ["arm_joint_1", "arm_joint_2", "arm_joint_3", "arm_joint_4", "arm_joint_5", "arm_joint_6"]
+    description: "List of joint names in the group."
+    read_only: true
+
+  current_limits:
+    __map_arm_joints:
+      compliant_limit:
+        type: double
+        description: "Current limits for each joint in the group in Ampere. 'request_current_interface' must be true."
+        read_only: true
+      stiff_limit:
+        type: double
+        description: "Default current limit for each joint in the group in Ampere. Will be set if current interface requested but compliant mode is off."
+        read_only: true
 
   velocity_limits:
-    {
-      type: double_array,
-      default_value: [],
-      description: "Velocity limits in rad/s for the joints in the group. If not set, the default velocity limits from the srdf are used.",
-      read_only: true,
-        validation: {
-          lower_element_bounds<>: [0.0],
-        }
-    }
+      type: double_array
+      default_value: []
+      description: "Velocity limits in rad/s for the joints in the group. If not set, the default velocity limits from the srdf are used."
+      read_only: true
+      validation:
+        lower_element_bounds<>: [0.0]
 
   robot_descriptions_loading_timeout:
-    {
-      type: double,
-      default_value: 5.0,
-      description: "Timeout for loading the robot description and robot_description_semantic in seconds.",
-      read_only: false,
-      validation: {
+      type: double
+      default_value: 5.0
+      description: "Timeout for loading the robot description and robot_description_semantic in seconds."
+      read_only: false
+      validation:
         gt<>: 0.0
-      }
-    }
 
   velocity_limit_satisfaction_max_iterations:
-    {
-      type: int,
-      default_value: 3,
-      description: "Maximum number of iterations of the velocity limit satisfaction algorithm.",
-      read_only: false,
-      validation: {
+      type: int
+      default_value: 3
+      description: "Maximum number of iterations of the velocity limit satisfaction algorithm."
+      read_only: false
+      validation:
         gt<>: 0
-      }
-    }
 
   velocity_limit_satisfaction_multiplicator:
-    {
-      type: double,
-      default_value: 0.5,
-      description: "Multiplicator for the velocity limit satisfaction algorithm. (0,1)",
-      read_only: false,
-      validation: {
+      type: double
+      default_value: 0.5
+      description: "Multiplicator for the velocity limit satisfaction algorithm. (0,1)"
+      read_only: false
+      validation:
         bounds<>: [ 0.0, 1.0 ]
-      }
-    }
 
   gripper_cmd_mode:
-    {
-      type: string,
-      default_value: "velocity",
-      description: "Mode of the gripper. 'velocity' or 'position'.",
-      read_only: false,
-      validation: {
+      type: string
+      default_value: "velocity"
+      description: "Mode of the gripper. 'velocity' or 'position'."
+      read_only: false
+      validation:
         one_of<>: [ [ "velocity", "position" ] ]
-      }
-    }
 
 
 
