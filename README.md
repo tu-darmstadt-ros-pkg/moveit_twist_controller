@@ -16,8 +16,11 @@ It leverages the MoveIt inverse kinematics interface and requires a [ros_control
   Proposed goal poses are checked for collisions via MoveIt before execution.
 
 - **Joint Velocity Limits**  
-  Checks if the requested motion exceeds joint velocity limits (extracted from the moveit::RobotModel).
+  Before sending a motion to the robot, joint velocities (taken from the `moveit::RobotModel`) are verified. If the requested motion would violate these limits, the target pose is scaled back:
 
+  1. Let the current position be $p_c$ and the original target $p_{to}$.
+  2. Compute a scaled target $p_t = p_c + \alpha^n (p_{to} - p_c)$ with $0 < \alpha < 1$.
+  3. Increase $n$ recursively (up to a maximum number of trials) until no joint-velocity limits are exceeded or the max iteration count is reached.
 - **Continuous Joints**  
   If the inverse kinematics solver proposes an angle jump of `n * 2π` for a continuous joint, the jump is ignored.
 
@@ -64,13 +67,22 @@ It leverages the MoveIt inverse kinematics interface and requires a [ros_control
 
 All parameters are typically defined in a YAML file under the namespace `moveit_twist_controller`. Below are the commonly used ones:
 
-| Parameter Name                   | Default Value                               | Description                                                                                                |
-|----------------------------------|---------------------------------------------|------------------------------------------------------------------------------------------------------------|
-| **`free_angle`**                 | `""`                                        | Axis with a “free” rotation (e.g., for IK in cases of infinite solutions). Acceptable values: `[ "", "x", "y", "z"]`. |
-| **`gripper_joint_name`**         | `"gripper_servo_joint"`                     | Name of the gripper joint in the URDF.                                                                     |
-| **`group_name`**                 | `"arm_group"`                               | MoveIt group to be controlled (the arm’s MoveIt planning group).                                           |
-| **`request_current_interface`**  | `true`                                      | If `true`, the controller will request and use current-limiting interfaces.                                |
-| **`current_limits`**             | `[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]`       | Per-joint current limits in Amps, used if the current-limiting interface is enabled.                        |
-| **`kinematics_solver`**          | `kdl_kinematics_plugin/KDLKinematicsPlugin` | Kinematics solver plugin to use (as an example).                                                        |
-| **`kinematics_solver_timeout`**  | `0.05`                                      | Timeout for the IK solver (in seconds).                                                                    |
-| **`kinematics_solver_attempts`** |  `3`                                        | Number of attempts allowed for the IK solver.                                                              |
+| Parameter Name                                   | Default                                                                                      | Description                                                                                                      |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **`group_name`**                                 | `arm_tcp_group`                                                                              | MoveIt planning group to control.                                                                                |
+| **`gripper_joint_name`**                         | `gripper_servo_joint`                                                                        | Name of the gripper joint in the URDF.                                                                           |
+| **`arm_joints`**                                 | `["arm_joint_1", "arm_joint_2", "arm_joint_3", "arm_joint_4", "arm_joint_5", "arm_joint_6"]` | List of all joints in the move group (same order).                                                               |
+| **`robot_descriptions_loading_timeout`**         | `10.0`                                                                                       | Seconds to wait for the robot descriptions (URDF/SRDF) to load.                                                  |
+| **`free_angle`**                                 | `""`                                                                                         | Axis with a “free” rotation (for IK redundancy). Acceptable values: `""`, `"x"`, `"y"`, `"z"`.                   |
+| **`velocity_limits`**                            | `[]`                                                                                         | Maximum joint velocities (rad/s) for each arm joint. If empty the limits from the SRDF will be used.             |
+| **`velocity_limit_satisfaction_max_iterations`** | `3`                                                                                          | Maximum number of recursive scaling iterations to satisfy joint-velocity limits.                                 |
+| **`velocity_limit_satisfaction_multiplicator`**  | `0.33`                                                                                       | Multiplicative factor ($\alpha$) used to scale back target pose when joint-velocity limits are violated.         |
+| **`request_current_interface`**                  | `false`                                                                                      | If `true`, the controller will request and use per-joint current-limiting interfaces for compliance.             |
+| **`current_limits`**                             | See below, per joint                                                                         | Per-joint current limits (Amps). Contains sub-parameters for each joint:                                         |
+|   • `<joint_1>.compliant_limit`                  | `3.0`                                                                                        | Compliant (lower) current limit for `<joint_1>` (Amps).                                                          |
+|   • `<arm_joint_1>.stiff_limit`                  | `10.0`                                                                                       | Stiff (higher) current limit for `<joint_1>` (Amps).                                                             |
+| **`kinematics_solver`**                          | `trac_ik_kinematics_plugin/TRAC_IKKinematicsPlugin`                                          | Plug-in name for the IK solver.                                                                                  |
+| **`kinematics_solver_timeout`**                  | `0.001`                                                                                      | Timeout for each IK request (seconds). Make sure controller does not take too long.                              |
+| **`kinematics_solver_attempts`**                 | `3`                                                                                          | Number of IK attempts before failing.                                                                            |
+| **`solve_type`**                                 | `Distance`                                                                                   | Strategy for choosing an IK solution. Options: `Distance` (closest to seed) or `Speed` (fastest).                |
+
