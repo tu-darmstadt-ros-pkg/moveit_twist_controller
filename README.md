@@ -1,30 +1,30 @@
 # MoveIt Twist Controller
 
-**MoveIt Twist Controller** provides direct 6D end-effector motion via geometry_msgs/TwistStamped commands. 
+**MoveIt Twist Controller** provides direct 6D end-effector motion via geometry_msgs/TwistStamped commands.
 It leverages the MoveIt inverse kinematics interface and requires a [ros_control](https://control.ros.org/rolling/index.html) *joint position interface*. It also supports collision checks, joint velocity limits, and optional compliance through joint current limits.
 
 
 ## Features
 
-- **Direct End-Effector Control**  
+- **Direct End-Effector Control**
   Send twist commands (`TwistStamped`) to move the end-effector in 6D space.
 
-- **Gripper Control**  
+- **Gripper Control**
   Send velocity commands (`Float64`) to open/close the gripper.
 
-- **Collision Avoidance**  
+- **Collision Avoidance**
   Proposed goal poses are checked for collisions via MoveIt before execution.
 
-- **Joint Velocity Limits**  
+- **Joint Velocity Limits**
   Before sending a motion to the robot, joint velocities (taken from the `moveit::RobotModel`) are verified. If the requested motion would violate these limits, the target pose is scaled back:
 
   1. Let the current position be $p_c$ and the original target $p_{to}$.
   2. Compute a scaled target $p_t = p_c + \alpha^n (p_{to} - p_c)$ with $0 < \alpha < 1$.
   3. Increase $n$ recursively (up to a maximum number of trials) until no joint-velocity limits are exceeded or the max iteration count is reached.
-- **Continuous Joints**  
+- **Continuous Joints**
   If the inverse kinematics solver proposes an angle jump of `n * 2π` for a continuous joint, the jump is ignored.
 
-- **Compliance (Optional)**  
+- **Compliance (Optional)**
   Enables current-limiting on arm joints (using a dynamically reconfigurable interface) to achieve compliance.
 
 
