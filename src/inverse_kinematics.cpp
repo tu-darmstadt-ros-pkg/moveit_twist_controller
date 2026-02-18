@@ -163,9 +163,9 @@ bool InverseKinematics::isCollisionFree(
   if ( res.collision ) {
     contact_map = res.contacts;
     for ( auto it = contact_map.begin(); it != contact_map.end(); ++it ) {
-      RCLCPP_WARN_STREAM( node_->get_logger(), "Detected collision between '"
-                                                   << it->first.first << "' and '"
-                                                   << it->first.second << "'." );
+      RCLCPP_WARN_STREAM_THROTTLE( node_->get_logger(), *node_->get_clock(), 2000,
+                                   "Detected collision between '" << it->first.first << "' and '"
+                                                                  << it->first.second << "'." );
     }
   }
 
