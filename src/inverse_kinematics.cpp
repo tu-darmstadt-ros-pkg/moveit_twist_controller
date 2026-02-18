@@ -8,6 +8,7 @@ namespace moveit_twist_controller
 {
 bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node,
                               rclcpp::Node::SharedPtr node, const std::string &group_name,
+                              const std::string &robot_description,
                               const double robot_descriptions_loading_timeout )
 {
   node_ = node;                     // NOT SPINNING -> NO CALLBACKS BUT PARAMETERS SHOULD WORK
@@ -15,15 +16,27 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
   RCLCPP_DEBUG( node_->get_logger(), "Initializing inverse kinematics controller in namespace '%s'.",
                 node_->get_namespace() );
   RCLCPP_DEBUG( node_->get_logger(), "Moveit Group name: %s", group_name.c_str() );
-  auto robot_description =
-      getParameterFromTopic( "robot_description", robot_descriptions_loading_timeout );
-  auto robot_description_semantic =
-      getParameterFromTopic( "robot_description_semantic", robot_descriptions_loading_timeout );
-  if ( robot_description.empty() || robot_description_semantic.empty() ) {
-    if ( robot_description.empty() )
-      RCLCPP_ERROR( node_->get_logger(), "Failed to get robot description." );
-    if ( robot_description_semantic.empty() )
-      RCLCPP_ERROR( node_->get_logger(), "Failed to get robot description semantic." );
+
+  if ( robot_description.empty() ) {
+    RCLCPP_ERROR( node_->get_logger(), "Robot description is empty." );
+    return false;
+  }
+
+  // Get robot_description_semantic: first try parameter, then fall back to topic
+  std::string robot_description_semantic;
+  if ( lifecycle_node_->has_parameter( "robot_description_semantic" ) ) {
+    robot_description_semantic =
+        lifecycle_node_->get_parameter( "robot_description_semantic" ).as_string();
+    RCLCPP_INFO( node_->get_logger(), "Loaded robot_description_semantic from parameter." );
+  }
+  if ( robot_description_semantic.empty() ) {
+    RCLCPP_INFO( node_->get_logger(),
+                 "robot_description_semantic parameter not set, subscribing to topic." );
+    robot_description_semantic =
+        getParameterFromTopic( "robot_description_semantic", robot_descriptions_loading_timeout );
+  }
+  if ( robot_description_semantic.empty() ) {
+    RCLCPP_ERROR( node_->get_logger(), "Failed to get robot description semantic." );
     return false;
   }
   setKinematicParameters( group_name );
