@@ -18,8 +18,9 @@ class InverseKinematics
 public:
   InverseKinematics() : joint_model_group_( nullptr ) { }
 
-  bool init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node, rclcpp::Node::SharedPtr node,
-             const std::string &group_name, const double robot_descriptions_loading_timeout );
+  bool init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node,
+             rclcpp::Node::SharedPtr node, const std::string &group_name,
+             const std::string &robot_description, const double robot_descriptions_loading_timeout );
   bool calcInvKin( const Eigen::Affine3d &pose, const std::vector<double> &seed,
                    std::vector<double> &solution );
   Eigen::Affine3d getEndEffectorPose( const std::vector<double> &joint_positions ) const;
@@ -64,13 +65,15 @@ void InverseKinematics::declareAndSetMoveitParameter( const std::string &param_n
                                                       const std::string &group_name,
                                                       const T &default_value ) const
 {
-  // declare the parameter with a default value on lifecycle node
-  lifecycle_node_->declare_parameter<T>( param_name, default_value );
+  // declare the parameter with a default value on lifecycle node (skip if already declared)
+  if ( !lifecycle_node_->has_parameter( param_name ) )
+    lifecycle_node_->declare_parameter<T>( param_name, default_value );
   T value = lifecycle_node_->get_parameter( param_name ).get_value<T>();
 
   std::string moveit_param_name = "_kinematics." + group_name + "." + param_name;
-  // declare and set the parameter on the node
-  node_->declare_parameter<T>( moveit_param_name, value );
+  // declare and set the parameter on the node (skip if already declared)
+  if ( !node_->has_parameter( moveit_param_name ) )
+    node_->declare_parameter<T>( moveit_param_name, value );
   node_->set_parameter( rclcpp::Parameter( moveit_param_name, value ) );
 }
 

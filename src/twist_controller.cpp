@@ -109,7 +109,7 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     moveit_init_node_ = std::make_shared<rclcpp::Node>(
         get_node()->get_name() + std::string( "_moveit_init" ), get_node()->get_namespace() );
 
-    if ( !ik_.init( get_node(), moveit_init_node_, params_.group_name,
+    if ( !ik_.init( get_node(), moveit_init_node_, params_.group_name, get_robot_description(),
                     params_.robot_descriptions_loading_timeout ) )
       return controller_interface::CallbackReturn::ERROR;
 
