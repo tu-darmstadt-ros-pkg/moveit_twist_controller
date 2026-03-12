@@ -1,8 +1,6 @@
 #include <moveit_twist_controller/common.hpp>
 #include <moveit_twist_controller/twist_controller.hpp>
 
-#include <moveit/robot_state/conversions.hpp>
-
 #include <tf2_eigen/tf2_eigen.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
@@ -21,16 +19,14 @@ controller_interface::InterfaceConfiguration MoveitTwistController::command_inte
     RCLCPP_ERROR( get_node()->get_logger(),
                   "Arm joint names are empty in command_interface_configuration" );
   // all arm joints
+  const std::string prefix =
+      params_.chained_controller.empty() ? "" : params_.chained_controller + "/";
   size_t index = 0;
   for ( const auto &joint_name : arm_joint_names_ ) {
-    config.names.push_back( joint_name + "/position" );
+    config.names.push_back( prefix + joint_name + "/position" );
     joint_command_interface_mapping_[joint_name + "/position"] = index++;
-    if ( params_.request_current_interface ) {
-      config.names.push_back( joint_name + "/current" );
-      joint_command_interface_mapping_[joint_name + "/current"] = index++;
-    }
   }
-  // The gripper joint
+  // The gripper joint (no chained controller prefix)
   config.names.push_back( params_.gripper_joint_name + std::string( "/position" ) );
   joint_command_interface_mapping_[params_.gripper_joint_name + "/position"] = index++;
   return config;
@@ -141,31 +137,21 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     current_joint_angles_.resize( joint_names_.size() );
     current_arm_joint_angles.resize( arm_joint_names_.size() );
     previous_goal_state_.resize( arm_joint_names_.size() );
+    smoothed_joint_velocities_.assign( arm_joint_names_.size(), 0.0 );
 
     RCLCPP_INFO( get_node()->get_logger(), "Gripper joint: %s", params_.gripper_joint_name.c_str() );
     if ( !loadGripperJointLimits() ) {
       return controller_interface::CallbackReturn::ERROR;
     }
 
-    // Current limit setup
-    if ( params_.request_current_interface ) {
-      // make sure arm_joint_names and params_.arm_joint_names_map are the same
-      if ( params_.arm_joints.size() != arm_joint_names_.size() ) {
-        RCLCPP_ERROR( get_node()->get_logger(), "Arm joint specified in the config file do not "
-                                                "match the joints in the specified move_group" );
-        return controller_interface::CallbackReturn::ERROR;
-      }
-      if ( params_.current_limits.arm_joints_map.size() != arm_joint_names_.size() ) {
-        RCLCPP_ERROR( get_node()->get_logger(),
-                      "Current limits size does not match arm joint names size" );
-        return controller_interface::CallbackReturn::ERROR;
-      }
-    }
     // Create publishers and subscriptions.
     goal_pose_pub_ =
         get_node()->create_publisher<geometry_msgs::msg::PoseStamped>( "~/goal_pose", 10 );
-    robot_state_pub_ =
-        get_node()->create_publisher<moveit_msgs::msg::DisplayRobotState>( "~/robot_state", 10 );
+    collision_marker_pub_ = get_node()->create_publisher<visualization_msgs::msg::MarkerArray>(
+        "~/collision_markers", 10 );
+    rt_collision_marker_pub_ =
+        std::make_unique<realtime_tools::RealtimePublisher<visualization_msgs::msg::MarkerArray>>(
+            collision_marker_pub_ );
     enabled_pub_ = get_node()->create_publisher<std_msgs::msg::Bool>( "~/enabled", 10 );
 
     // Twist command subscription
@@ -199,18 +185,26 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
                                      twist_msg->twist.angular.z );
           const tf2::Vector3 ang_out = rotation * ang_in;
 
-          twist_.linear = Eigen::Vector3d( lin_out.x(), lin_out.y(), lin_out.z() );
-          twist_.angular = Eigen::Vector3d( ang_out.x(), ang_out.y(), ang_out.z() );
+          TwistCommand cmd;
+          cmd.twist.linear = Eigen::Vector3d( lin_out.x(), lin_out.y(), lin_out.z() );
+          cmd.twist.angular = Eigen::Vector3d( ang_out.x(), ang_out.y(), ang_out.z() );
+          cmd.stamp = get_node()->now();
+          twist_cmd_buf_.writeFromNonRT( cmd );
         } );
 
     // Gripper speed subscription
     gripper_vel_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64>(
-        "~/gripper_vel_cmd", 10,
-        [this]( const std_msgs::msg::Float64::SharedPtr msg ) { gripper_cmd_speed_ = msg->data; } );
+        "~/gripper_vel_cmd", 10, [this]( const std_msgs::msg::Float64::SharedPtr msg ) {
+          GripperVelCommand cmd;
+          cmd.speed = msg->data;
+          cmd.stamp = get_node()->now();
+          gripper_vel_cmd_buf_.writeFromNonRT( cmd );
+        } );
 
     gripper_pos_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64>(
-        "~/gripper_pos_cmd", 10,
-        [this]( const std_msgs::msg::Float64::SharedPtr msg ) { gripper_cmd_pos_ = msg->data; } );
+        "~/gripper_pos_cmd", 10, [this]( const std_msgs::msg::Float64::SharedPtr msg ) {
+          gripper_cmd_pos_.store( msg->data, std::memory_order_relaxed );
+        } );
 
     // Services
     reset_pose_server_ = get_node()->create_service<std_srvs::srv::Empty>(
@@ -233,13 +227,13 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     hold_pose_server_ = get_node()->create_service<std_srvs::srv::SetBool>(
         "~/hold_mode", [this]( const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                                std::shared_ptr<std_srvs::srv::SetBool::Response> response ) {
-          if ( hold_pose_ != request->data ) {
-            hold_pose_ = request->data;
+          if ( hold_pose_.load() != request->data ) {
             RCLCPP_INFO_STREAM( get_node()->get_logger(),
-                                "Hold pose " << ( hold_pose_ ? "enabled" : "disabled" ) );
-            if ( hold_pose_ ) {
-              hold_goal_pose_ = getPoseInFrame( ee_goal_pose_, "odom" );
+                                "Hold pose " << ( request->data ? "enabled" : "disabled" ) );
+            if ( request->data ) {
+              hold_goal_pose_buf_.writeFromNonRT( getPoseInFrame( ee_goal_pose_, "odom" ) );
             }
+            hold_pose_.store( request->data );
           }
           response->success = true;
           return true;
@@ -250,24 +244,6 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
                                       std::shared_ptr<std_srvs::srv::SetBool::Response> response ) {
           move_tool_center_ = request->data;
           response->success = true;
-          return true;
-        } );
-    enable_current_limits_server_ = get_node()->create_service<std_srvs::srv::SetBool>(
-        "~/enable_current_limits",
-        [this]( const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-                std::shared_ptr<std_srvs::srv::SetBool::Response> response ) {
-          if ( params_.request_current_interface ) {
-            set_current_limits_ = request->data;
-            // check if dynamic current parameters are outdated
-            if ( param_listener_->is_old( params_ ) )
-              updateDynamicParameters();
-            response->success = true;
-          } else {
-            RCLCPP_WARN( get_node()->get_logger(),
-                         "Current interfaces were not requested. Change request_current_interface "
-                         "parameter and start again!" );
-            response->success = false;
-          }
           return true;
         } );
   } catch ( const std::exception &e ) {
@@ -287,22 +263,31 @@ MoveitTwistController::on_activate( const rclcpp_lifecycle::State & /*previous_s
   // Initialize states
   twist_.linear = Eigen::Vector3d::Zero();
   twist_.angular = Eigen::Vector3d::Zero();
-  reset_pose_ = true;
-  reset_tool_center_ = false;
-  move_tool_center_ = false;
-  hold_pose_ = false;
+  const auto clock_type = get_node()->get_clock()->get_clock_type();
+  TwistCommand zero_twist;
+  zero_twist.stamp = rclcpp::Time( 0, 0, clock_type );
+  twist_cmd_buf_.writeFromNonRT( zero_twist );
+  GripperVelCommand zero_gripper_vel;
+  zero_gripper_vel.stamp = rclcpp::Time( 0, 0, clock_type );
+  gripper_vel_cmd_buf_.writeFromNonRT( zero_gripper_vel );
+  gripper_cmd_pos_.store( 0.0, std::memory_order_relaxed );
+  reset_pose_.store( true );
+  reset_tool_center_.store( false );
+  move_tool_center_.store( false );
+  hold_pose_.store( false );
 
   if ( !getState( gripper_pos_, params_.gripper_joint_name, "position" ) ) {
     gripper_pos_ = 0.0;
   }
   gripper_cmd_speed_ = 0.0;
+  std::fill( smoothed_joint_velocities_.begin(), smoothed_joint_velocities_.end(), 0.0 );
 
   initialized_ = true;
   enabled_ = true;
 
   // activate publishers
   goal_pose_pub_->on_activate();
-  robot_state_pub_->on_activate();
+  collision_marker_pub_->on_activate();
   enabled_pub_->on_activate();
   RCLCPP_INFO( get_node()->get_logger(), "Joystick Control started." );
   publishStatus();
@@ -318,11 +303,9 @@ MoveitTwistController::on_deactivate( const rclcpp_lifecycle::State & /*previous
   RCLCPP_INFO( get_node()->get_logger(), "Joystick Control stopped." );
   enabled_ = false;
   publishStatus();
-  hideRobotState();
-
   // deactivate publishers
   goal_pose_pub_->on_deactivate();
-  robot_state_pub_->on_deactivate();
+  collision_marker_pub_->on_deactivate();
   enabled_pub_->on_deactivate();
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -346,12 +329,31 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
     current_arm_joint_angles[i] = current_joint_angles_[arm_joint_indices_[i]];
   }
 
+  // Read commands from realtime buffers and apply timeout
+  const double cmd_timeout = params_.cmd_timeout;
+  {
+    const auto &twist_cmd = *twist_cmd_buf_.readFromRT();
+    if ( ( time - twist_cmd.stamp ).seconds() > cmd_timeout ) {
+      twist_.linear = Eigen::Vector3d::Zero();
+      twist_.angular = Eigen::Vector3d::Zero();
+    } else {
+      twist_ = twist_cmd.twist;
+    }
+  }
+  {
+    const auto &gripper_vel_cmd = *gripper_vel_cmd_buf_.readFromRT();
+    if ( ( time - gripper_vel_cmd.stamp ).seconds() > cmd_timeout ) {
+      gripper_cmd_speed_ = 0.0;
+    } else {
+      gripper_cmd_speed_ = gripper_vel_cmd.speed;
+    }
+  }
+
   // Compute next state
   updateArm( time, period );
   updateGripper( time, period );
 
-  // Visualization // TODO: make realtime safe
-  // publishRobotState( goal_state_, contact_map_ );
+  publishCollisionMarkers();
 
   // Publish goal pose
   geometry_msgs::msg::PoseStamped goal_pose_msg;
@@ -430,6 +432,20 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
 
   // Compute IK
   if ( calculateInverseKinematicsConsideringVelocityLimits( ee_goal_pose_, old_goal, period ) ) {
+    // Apply joint velocity smoothing
+    const double alpha = params_.joint_velocity_smoothing_factor;
+    if ( alpha > 0.0 ) {
+      const double dt = period.seconds();
+      for ( size_t i = 0; i < goal_state_.size(); ++i ) {
+        const double raw_vel = computeJointAngleDiff( previous_goal_state_[i], goal_state_[i] ) / dt;
+        smoothed_joint_velocities_[i] =
+            alpha * smoothed_joint_velocities_[i] + ( 1.0 - alpha ) * raw_vel;
+        goal_state_[i] = previous_goal_state_[i] + smoothed_joint_velocities_[i] * dt;
+      }
+      ee_goal_pose_ = ik_.getEndEffectorPose( goal_state_ );
+      tool_goal_pose_ = ee_goal_pose_ * tool_center_offset_;
+    }
+
     contact_map_.clear();
     sensor_msgs::msg::JointState joint_state;
     joint_state.name = joint_names_;
@@ -450,14 +466,6 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
   // Write next goal state to command_interfaces_
   for ( size_t i = 0; i < arm_joint_names_.size(); ++i ) {
     success &= setCommand( goal_state_[i], arm_joint_names_[i], "position" );
-    // if current interfaces requested, write current limit, write 0 if current limits not enabled
-    if ( params_.request_current_interface ) {
-      const double limit =
-          set_current_limits_
-              ? params_.current_limits.arm_joints_map[arm_joint_names_[i]].compliant_limit
-              : params_.current_limits.arm_joints_map[arm_joint_names_[i]].stiff_limit;
-      success &= setCommand( limit, arm_joint_names_[i], "current" );
-    }
   }
   if ( !success )
     RCLCPP_WARN( get_node()->get_logger(), "Failed to write next goal state to hardware." );
@@ -482,18 +490,19 @@ bool MoveitTwistController::computeNewGoalPose( const rclcpp::Duration &period )
     return false;
   }
 
-  if ( hold_pose_ ) {
+  if ( hold_pose_.load() ) {
+    const auto hold_goal_pose = *hold_goal_pose_buf_.readFromRT();
     geometry_msgs::msg::TransformStamped transform_stamped;
     try {
       transform_stamped = tf_buffer_->lookupTransform(
-          ik_.getBaseFrame(), hold_goal_pose_.header.frame_id, tf2::TimePointZero );
+          ik_.getBaseFrame(), hold_goal_pose.header.frame_id, tf2::TimePointZero );
     } catch ( tf2::TransformException &ex ) {
       RCLCPP_WARN( get_node()->get_logger(), "%s", ex.what() );
       return false;
     }
     Eigen::Affine3d base_to_frame = tf2::transformToEigen( transform_stamped.transform );
     Eigen::Affine3d frame_to_ee;
-    tf2::fromMsg( hold_goal_pose_.pose, frame_to_ee );
+    tf2::fromMsg( hold_goal_pose.pose, frame_to_ee );
     ee_goal_pose_ = base_to_frame * frame_to_ee;
     tool_goal_pose_ = ee_goal_pose_ * tool_center_offset_;
     return true;
@@ -549,7 +558,8 @@ void MoveitTwistController::updateGripper( const rclcpp::Time & /*time*/,
     applied_gripper_vel = gripper_cmd_speed_;
   } else if ( params_.gripper_cmd_mode == "position" ) {
     // use gripper_pose_cmd but make sure the velocity is not too high
-    applied_gripper_vel = std::clamp( ( gripper_cmd_pos_ - gripper_pos_ ) / period.seconds(),
+    const double cmd_pos = gripper_cmd_pos_.load( std::memory_order_relaxed );
+    applied_gripper_vel = std::clamp( ( cmd_pos - gripper_pos_ ) / period.seconds(),
                                       -gripper_max_velocity_limit_, gripper_max_velocity_limit_ );
   } else {
     RCLCPP_ERROR( get_node()->get_logger(), "Invalid gripper mode." );
@@ -572,53 +582,43 @@ bool MoveitTwistController::loadGripperJointLimits()
   return true;
 }
 
-void MoveitTwistController::publishRobotState(
-    const std::vector<double> &arm_joint_states,
-    const collision_detection::CollisionResult::ContactMap &contact_map )
+void MoveitTwistController::publishCollisionMarkers()
 {
-  sensor_msgs::msg::JointState joint_state;
-  joint_state.name = joint_names_;
-  joint_state.position = current_joint_angles_;
-  moveit::core::RobotState robot_state = ik_.getAsRobotState( joint_state, arm_joint_states );
-
-  // transform the base
-  geometry_msgs::msg::TransformStamped transform_stamped;
-  try {
-    transform_stamped =
-        tf_buffer_->lookupTransform( "world", ik_.getBaseFrame(), tf2::TimePointZero );
-  } catch ( tf2::TransformException &ex ) {
-    RCLCPP_WARN( get_node()->get_logger(), "%s", ex.what() );
+  if ( !rt_collision_marker_pub_->trylock() )
     return;
+
+  auto &marker_array = rt_collision_marker_pub_->msg_;
+  marker_array.markers.clear();
+
+  // Always publish a DELETEALL marker first to clear stale markers
+  visualization_msgs::msg::Marker delete_all;
+  delete_all.action = visualization_msgs::msg::Marker::DELETEALL;
+  delete_all.header.frame_id = ik_.getBaseFrame();
+  marker_array.markers.push_back( delete_all );
+
+  int id = 0;
+  for ( const auto &[pair, contacts] : contact_map_ ) {
+    for ( const auto &contact : contacts ) {
+      visualization_msgs::msg::Marker marker;
+      marker.header.frame_id = ik_.getBaseFrame();
+      marker.ns = "collisions";
+      marker.id = id++;
+      marker.type = visualization_msgs::msg::Marker::SPHERE;
+      marker.action = visualization_msgs::msg::Marker::ADD;
+      marker.pose.position.x = contact.pos.x();
+      marker.pose.position.y = contact.pos.y();
+      marker.pose.position.z = contact.pos.z();
+      marker.pose.orientation.w = 1.0;
+      marker.scale.x = 0.03;
+      marker.scale.y = 0.03;
+      marker.scale.z = 0.03;
+      marker.color.r = 1.0f;
+      marker.color.a = 1.0f;
+      marker_array.markers.push_back( marker );
+    }
   }
 
-  Eigen::Isometry3d pose = tf2::transformToEigen( transform_stamped.transform );
-  robot_state.setJointPositions( "world_virtual_joint", pose );
-
-  moveit_msgs::msg::DisplayRobotState display_robot_state;
-  moveit::core::robotStateToRobotStateMsg( robot_state, display_robot_state.state );
-
-  // highlight links in collision
-  std_msgs::msg::ColorRGBA color;
-  color.a = 1.0;
-  color.r = 1.0;
-  color.g = 0.0;
-  color.b = 0.0;
-
-  for ( const auto &it : contact_map ) {
-    const std::string &link1 = it.first.first;
-    const std::string &link2 = it.first.second;
-
-    moveit_msgs::msg::ObjectColor object_color;
-    object_color.id = link1;
-    object_color.color = color;
-    display_robot_state.highlight_links.push_back( object_color );
-
-    object_color.id = link2;
-    object_color.color = color;
-    display_robot_state.highlight_links.push_back( object_color );
-  }
-
-  robot_state_pub_->publish( display_robot_state );
+  rt_collision_marker_pub_->unlockAndPublish();
 }
 
 geometry_msgs::msg::PoseStamped MoveitTwistController::getPoseInFrame( const Eigen::Affine3d &pose,
@@ -651,25 +651,6 @@ void MoveitTwistController::publishStatus() const
   std_msgs::msg::Bool bool_msg;
   bool_msg.data = enabled_;
   enabled_pub_->publish( bool_msg );
-}
-
-void MoveitTwistController::hideRobotState() const
-{
-  moveit_msgs::msg::DisplayRobotState display_robot_state;
-  display_robot_state.hide = true;
-  robot_state_pub_->publish( display_robot_state );
-}
-
-void MoveitTwistController::updateDynamicParameters()
-{
-  const auto params = param_listener_->get_params();
-  // update current limits
-  if ( params_.current_limits.arm_joints_map.size() != arm_joint_names_.size() ) {
-    RCLCPP_ERROR( get_node()->get_logger(),
-                  "Current limits size does not match arm joint names size" );
-    return;
-  }
-  params_.current_limits = params_.current_limits;
 }
 
 } // namespace moveit_twist_controller

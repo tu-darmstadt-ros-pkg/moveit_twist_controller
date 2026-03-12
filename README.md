@@ -1,7 +1,7 @@
 # MoveIt Twist Controller
 
 **MoveIt Twist Controller** provides direct 6D end-effector motion via geometry_msgs/TwistStamped commands. 
-It leverages the MoveIt inverse kinematics interface and requires a [ros_control](https://control.ros.org/rolling/index.html) *joint position interface*. It also supports collision checks, joint velocity limits, and optional compliance through joint current limits.
+It leverages the MoveIt inverse kinematics interface and requires a [ros_control](https://control.ros.org/rolling/index.html) *joint position interface*. It also supports collision checks and joint velocity limits.
 
 
 ## Features
@@ -23,10 +23,6 @@ It leverages the MoveIt inverse kinematics interface and requires a [ros_control
   3. Increase $n$ recursively (up to a maximum number of trials) until no joint-velocity limits are exceeded or the max iteration count is reached.
 - **Continuous Joints**  
   If the inverse kinematics solver proposes an angle jump of `n * 2π` for a continuous joint, the jump is ignored.
-
-- **Compliance (Optional)**  
-  Enables current-limiting on arm joints (using a dynamically reconfigurable interface) to achieve compliance.
-
 
 ## ROS Interfaces
 
@@ -58,11 +54,6 @@ It leverages the MoveIt inverse kinematics interface and requires a [ros_control
     - When called with `true`, holds the robot end-effector’s world pose while, for instance, moving the robot base.
     - When called with `false`, normal twist-based motions resume.
 
-3. **`moveit_twist_controller/enable_current_limits`** (`std_srvs/Bool`)
-    - Enables/disables the per-joint current limit interface to achieve compliance.
-    - Requires `request_current_interface` to be enabled in the parameters.
-
-
 ## Parameters
 
 All parameters are typically defined in a YAML file under the namespace `moveit_twist_controller`. Below are the commonly used ones:
@@ -77,10 +68,6 @@ All parameters are typically defined in a YAML file under the namespace `moveit_
 | **`velocity_limits`**                            | `[]`                                                                                         | Maximum joint velocities (rad/s) for each arm joint. If empty the limits from the SRDF will be used.             |
 | **`velocity_limit_satisfaction_max_iterations`** | `3`                                                                                          | Maximum number of recursive scaling iterations to satisfy joint-velocity limits.                                 |
 | **`velocity_limit_satisfaction_multiplicator`**  | `0.33`                                                                                       | Multiplicative factor ($\alpha$) used to scale back target pose when joint-velocity limits are violated.         |
-| **`request_current_interface`**                  | `false`                                                                                      | If `true`, the controller will request and use per-joint current-limiting interfaces for compliance.             |
-| **`current_limits`**                             | See below, per joint                                                                         | Per-joint current limits (Amps). Contains sub-parameters for each joint:                                         |
-|   • `<joint_1>.compliant_limit`                  | `3.0`                                                                                        | Compliant (lower) current limit for `<joint_1>` (Amps).                                                          |
-|   • `<arm_joint_1>.stiff_limit`                  | `10.0`                                                                                       | Stiff (higher) current limit for `<joint_1>` (Amps).                                                             |
 | **`kinematics_solver`**                          | `trac_ik_kinematics_plugin/TRAC_IKKinematicsPlugin`                                          | Plug-in name for the IK solver.                                                                                  |
 | **`kinematics_solver_timeout`**                  | `0.001`                                                                                      | Timeout for each IK request (seconds). Make sure controller does not take too long.                              |
 | **`kinematics_solver_attempts`**                 | `3`                                                                                          | Number of IK attempts before failing.                                                                            |

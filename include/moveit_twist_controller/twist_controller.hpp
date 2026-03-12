@@ -2,6 +2,7 @@
 #define MOVEIT_JOYSTICK_CONTROL__JOYSTICK_CONTROL_HPP_
 
 #include <Eigen/Eigen>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,14 +12,16 @@
 #include "moveit_twist_controller/inverse_kinematics.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "realtime_tools/realtime_buffer.hpp"
+#include "realtime_tools/realtime_publisher.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "std_srvs/srv/empty.hpp"
 #include "std_srvs/srv/set_bool.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
-#include <moveit_msgs/msg/display_robot_state.hpp>
 #include <moveit_twist_controller/moveit_twist_controller_parameters.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 namespace moveit_twist_controller
 {
@@ -26,6 +29,16 @@ namespace moveit_twist_controller
 struct Twist {
   Eigen::Vector3d linear;
   Eigen::Vector3d angular;
+};
+
+struct TwistCommand {
+  Twist twist = { Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero() };
+  rclcpp::Time stamp = rclcpp::Time( 0, 0, RCL_CLOCK_UNINITIALIZED );
+};
+
+struct GripperVelCommand {
+  double speed = 0.0;
+  rclcpp::Time stamp = rclcpp::Time( 0, 0, RCL_CLOCK_UNINITIALIZED );
 };
 
 class MoveitTwistController : public controller_interface::ControllerInterface
@@ -63,15 +76,12 @@ private:
                    std_srvs::srv::SetBool::Response::SharedPtr response );
   bool moveToolCenterCb( const std_srvs::srv::SetBool::Request::SharedPtr request,
                          std_srvs::srv::SetBool::Response::SharedPtr response );
-  void publishRobotState( const std::vector<double> &arm_joint_states,
-                          const collision_detection::CollisionResult::ContactMap &contact_map_ );
-  void hideRobotState() const;
+  void publishCollisionMarkers();
   void setupInterfaces();
   static double computeJointAngleDiff( double angle_1, double angle_2 );
   bool setCommand( double value, const std::string &joint_name, const std::string &interface_name );
   bool getState( double &value, const std::string &joint_name,
                  const std::string &interface_name ) const;
-  void updateDynamicParameters();
   /// Transforms pose to desired frame
   /// Pose has to be relative to base frame
   geometry_msgs::msg::PoseStamped getPoseInFrame( const Eigen::Affine3d &pose,
@@ -82,9 +92,9 @@ private:
 
   bool initialized_ = false;
   bool enabled_ = false;
-  bool reset_pose_ = false;
-  bool reset_tool_center_ = false;
-  bool move_tool_center_ = false;
+  std::atomic<bool> reset_pose_ = false;
+  std::atomic<bool> reset_tool_center_ = false;
+  std::atomic<bool> move_tool_center_ = false;
 
   int free_angle_ = -1;
 
@@ -96,17 +106,19 @@ private:
 
   collision_detection::CollisionResult::ContactMap contact_map_;
 
+  realtime_tools::RealtimeBuffer<TwistCommand> twist_cmd_buf_;
+  realtime_tools::RealtimeBuffer<GripperVelCommand> gripper_vel_cmd_buf_;
+  std::atomic<double> gripper_cmd_pos_ = 0.0;
   Twist twist_;
   double gripper_pos_ = 0.0;
   double gripper_speed_ = 0.0;
   double gripper_cmd_speed_ = 0.0;
-  double gripper_cmd_pos_ = 0.0;
   std::vector<double> joint_velocity_limits_;
+  std::vector<double> smoothed_joint_velocities_;
 
   std::vector<std::string> joint_names_;
   std::vector<std::string> arm_joint_names_;
   bool joint_state_received_ = false;
-  bool set_current_limits_ = false;
   std::vector<double> current_joint_angles_;
   std::vector<double> current_arm_joint_angles;
   std::vector<int> arm_joint_indices_; // indices of arm joints in joint_names_
@@ -117,8 +129,8 @@ private:
   double gripper_max_velocity_limit_ = 0.0;
 
   InverseKinematics ik_;
-  bool hold_pose_ = false;
-  geometry_msgs::msg::PoseStamped hold_goal_pose_;
+  std::atomic<bool> hold_pose_ = false;
+  realtime_tools::RealtimeBuffer<geometry_msgs::msg::PoseStamped> hold_goal_pose_buf_;
 
   Params params_;
   std::shared_ptr<ParamListener> param_listener_;
@@ -132,10 +144,11 @@ private:
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_tool_center_server_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr hold_pose_server_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr move_tool_center_server_;
-  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_current_limits_server_;
 
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_pub_;
-  rclcpp_lifecycle::LifecyclePublisher<moveit_msgs::msg::DisplayRobotState>::SharedPtr robot_state_pub_;
+  rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::MarkerArray>::SharedPtr collision_marker_pub_;
+  std::unique_ptr<realtime_tools::RealtimePublisher<visualization_msgs::msg::MarkerArray>>
+      rt_collision_marker_pub_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr enabled_pub_;
 
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;

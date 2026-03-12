@@ -31,9 +31,11 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
         sensor_msgs
         urdf
         moveit_msgs
+        visualization_msgs
         tf2_ros
         controller_interface
         hardware_interface
+        realtime_tools
         std_msgs
         std_srvs
         pluginlib

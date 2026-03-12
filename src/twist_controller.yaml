@@ -15,6 +15,12 @@ moveit_twist_controller:
     validation:
       not_empty<>: []
 
+  chained_controller:
+    type: string
+    default_value: ""
+    description: "Name of the chained controller to prepend to command interfaces. If set, command interfaces will be <chained_controller>/<joint>/<interface>, otherwise <joint>/<interface>."
+    read_only: true
+
   group_name:
     type: string
     default_value: "arm_group"
@@ -22,30 +28,6 @@ moveit_twist_controller:
     read_only: true
     validation:
       not_empty<>: [ ]
-
-  request_current_interface:
-    type: bool
-    default_value: false
-    description: "Request Current Interface per arm joint and provide service for current limit activation."
-    read_only: true
-
-
-  arm_joints:
-    type: string_array
-    default_value: ["arm_joint_1", "arm_joint_2", "arm_joint_3", "arm_joint_4", "arm_joint_5", "arm_joint_6"]
-    description: "List of joint names in the group."
-    read_only: true
-
-  current_limits:
-    __map_arm_joints:
-      compliant_limit:
-        type: double
-        description: "Current limits for each joint in the group in Ampere. 'request_current_interface' must be true."
-        read_only: true
-      stiff_limit:
-        type: double
-        description: "Default current limit for each joint in the group in Ampere. Will be set if current interface requested but compliant mode is off."
-        read_only: true
 
   velocity_limits:
       type: double_array
@@ -78,6 +60,22 @@ moveit_twist_controller:
       read_only: false
       validation:
         bounds<>: [ 0.0, 1.0 ]
+
+  joint_velocity_smoothing_factor:
+      type: double
+      default_value: 0.0
+      description: "Exponential smoothing factor for joint velocities. 0.0 means no smoothing (raw IK output), values close to 1.0 produce very smooth but sluggish motion."
+      read_only: false
+      validation:
+        bounds<>: [ 0.0, 1.0 ]
+
+  cmd_timeout:
+      type: double
+      default_value: 0.25
+      description: "Timeout in seconds after which twist and gripper velocity commands are zeroed if no new message arrives."
+      read_only: false
+      validation:
+        gt<>: 0.0
 
   gripper_cmd_mode:
       type: string
