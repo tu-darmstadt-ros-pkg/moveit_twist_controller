@@ -66,3 +66,10 @@ All parameters are typically defined in a YAML file under the namespace `moveit_
 | **`kinematics_solver_attempts`**                 | `3`                                                                                          | Number of IK attempts before failing.                                                                            |
 | **`solve_type`**                                 | `Distance`                                                                                   | Strategy for choosing an IK solution. Options: `Distance` (closest to seed) or `Speed` (fastest).                |
 
+## Related Controllers
+
+Gripper control and joint/current-limit safety used to live in this package; they now sit in [hector_ros_controllers](../hector_ros_controllers):
+
+- `gripper_position_effort_controller/GripperPositionEffortController` — standalone gripper controller (action + position/velocity topics, optional max-effort limits).
+- `safety_position_controller/SafetyPositionController` — chainable position controller that enforces joint and current limits and runs self-collision avoidance. Use it as the downstream controller by setting this package's `chained_controller` parameter to its name.
+
