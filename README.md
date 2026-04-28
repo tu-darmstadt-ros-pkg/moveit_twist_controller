@@ -9,9 +9,6 @@ It leverages the MoveIt inverse kinematics interface and requires a [ros_control
 - **Direct End-Effector Control**  
   Send twist commands (`TwistStamped`) to move the end-effector in 6D space.
 
-- **Gripper Control**  
-  Send velocity commands (`Float64`) to open/close the gripper.
-
 - **Collision Avoidance**  
   Proposed goal poses are checked for collisions via MoveIt before execution.
 
@@ -30,9 +27,6 @@ It leverages the MoveIt inverse kinematics interface and requires a [ros_control
 
 1. **`moveit_twist_controller/eef_cmd`** (`geometry_msgs/TwistStamped`)
     - Receives direct velocity commands for the end-effector in 6D space (linear and angular velocities).
-
-2. **`moveit_twist_controller/gripper_cmd`** (`std_msgs/Float64`)
-    - Receives velocity commands for the gripper.
 
 ### Published Topics
 
@@ -61,7 +55,6 @@ All parameters are typically defined in a YAML file under the namespace `moveit_
 | Parameter Name                                   | Default                                                                                      | Description                                                                                                      |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | **`group_name`**                                 | `arm_tcp_group`                                                                              | MoveIt planning group to control.                                                                                |
-| **`gripper_joint_name`**                         | `gripper_servo_joint`                                                                        | Name of the gripper joint in the URDF.                                                                           |
 | **`arm_joints`**                                 | `["arm_joint_1", "arm_joint_2", "arm_joint_3", "arm_joint_4", "arm_joint_5", "arm_joint_6"]` | List of all joints in the move group (same order).                                                               |
 | **`robot_descriptions_loading_timeout`**         | `10.0`                                                                                       | Seconds to wait for the robot descriptions (URDF/SRDF) to load.                                                  |
 | **`free_angle`**                                 | `""`                                                                                         | Axis with a “free” rotation (for IK redundancy). Acceptable values: `""`, `"x"`, `"y"`, `"z"`.                   |

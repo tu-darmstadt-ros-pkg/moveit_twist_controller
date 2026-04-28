@@ -2,6 +2,5 @@ test_moveit_twist_controller:
   ros__parameters:
 
     free_angle: ""
-    gripper_joint_name: "gripper_servo_joint"
     group_name: "arm_group"
     reject_if_velocity_limits_violated: false

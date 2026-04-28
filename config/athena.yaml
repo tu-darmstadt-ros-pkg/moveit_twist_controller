@@ -4,7 +4,6 @@
 #  ros__parameters:
 #    type: moveit_twist_controller/MoveitTwistController
 #    group_name: arm_tcp_group # arm_with_gripper_cam_group
-#    gripper_joint_name: gripper_servo_joint
 #
 #    # moveit params
 #    kinematics_solver: kdl_kinematics_plugin/KDLKinematicsPlugin

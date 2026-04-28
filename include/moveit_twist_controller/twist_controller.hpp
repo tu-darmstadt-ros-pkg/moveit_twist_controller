@@ -14,7 +14,6 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "realtime_tools/realtime_buffer.hpp"
 #include "realtime_tools/realtime_publisher.hpp"
-#include "std_msgs/msg/float64.hpp"
 #include "std_srvs/srv/empty.hpp"
 #include "std_srvs/srv/set_bool.hpp"
 #include "tf2_ros/buffer.h"
@@ -33,11 +32,6 @@ struct Twist {
 
 struct TwistCommand {
   Twist twist = { Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero() };
-  rclcpp::Time stamp = rclcpp::Time( 0, 0, RCL_CLOCK_UNINITIALIZED );
-};
-
-struct GripperVelCommand {
-  double speed = 0.0;
   rclcpp::Time stamp = rclcpp::Time( 0, 0, RCL_CLOCK_UNINITIALIZED );
 };
 
@@ -63,10 +57,8 @@ public:
 
 private:
   void publishStatus() const;
-  bool loadGripperJointLimits();
   void updateArm( const rclcpp::Time &time, const rclcpp::Duration &period );
   bool computeNewGoalPose( const rclcpp::Duration &period );
-  void updateGripper( const rclcpp::Time &time, const rclcpp::Duration &period );
 
   bool resetPoseCb( const std_srvs::srv::Empty::Request::SharedPtr request,
                     std_srvs::srv::Empty::Response::SharedPtr response );
@@ -107,12 +99,7 @@ private:
   collision_detection::CollisionResult::ContactMap contact_map_;
 
   realtime_tools::RealtimeBuffer<TwistCommand> twist_cmd_buf_;
-  realtime_tools::RealtimeBuffer<GripperVelCommand> gripper_vel_cmd_buf_;
-  std::atomic<double> gripper_cmd_pos_ = 0.0;
   Twist twist_;
-  double gripper_pos_ = 0.0;
-  double gripper_speed_ = 0.0;
-  double gripper_cmd_speed_ = 0.0;
   std::vector<double> joint_velocity_limits_;
   std::vector<double> smoothed_joint_velocities_;
 
@@ -122,11 +109,6 @@ private:
   std::vector<double> current_joint_angles_;
   std::vector<double> current_arm_joint_angles;
   std::vector<int> arm_joint_indices_; // indices of arm joints in joint_names_
-  int gripper_index_ = 0;              // index of gripper in joint_names_
-
-  double gripper_upper_limit_ = 0.0;
-  double gripper_lower_limit_ = 0.0;
-  double gripper_max_velocity_limit_ = 0.0;
 
   InverseKinematics ik_;
   std::atomic<bool> hold_pose_ = false;
@@ -138,8 +120,6 @@ private:
   mutable std::map<std::string, size_t> joint_command_interface_mapping_;
 
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_cmd_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gripper_pos_cmd_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gripper_vel_cmd_sub_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_pose_server_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_tool_center_server_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr hold_pose_server_;
@@ -154,7 +134,6 @@ private:
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   rclcpp::Node::SharedPtr moveit_init_node_;
-  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
 };
 
 } // namespace moveit_twist_controller
