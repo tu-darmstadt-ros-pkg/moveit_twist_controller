@@ -2,7 +2,7 @@ moveit_twist_controller:
   free_angle:
     type: string
     default_value: ""
-    description: "Axis where the actual rotation is free. -1 means no free angle."
+    description: "Axis where the actual rotation is free. Empty string means no free angle."
     read_only: true
     validation:
       one_of<>: [["","x","y","z"]]

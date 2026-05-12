@@ -54,21 +54,25 @@ All parameters are typically defined in a YAML file under the namespace `moveit_
 
 | Parameter Name                                   | Default                                                                                      | Description                                                                                                      |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| **`group_name`**                                 | `arm_tcp_group`                                                                              | MoveIt planning group to control.                                                                                |
-| **`arm_joints`**                                 | `["arm_joint_1", "arm_joint_2", "arm_joint_3", "arm_joint_4", "arm_joint_5", "arm_joint_6"]` | List of all joints in the move group (same order).                                                               |
+| **`group_name`**                                 | `arm_tcp_group`                                                                              | MoveIt planning group to control. Joint names are taken from this group.                                         |
 | **`robot_descriptions_loading_timeout`**         | `10.0`                                                                                       | Seconds to wait for the robot descriptions (URDF/SRDF) to load.                                                  |
 | **`free_angle`**                                 | `""`                                                                                         | Axis with a “free” rotation (for IK redundancy). Acceptable values: `""`, `"x"`, `"y"`, `"z"`.                   |
 | **`velocity_limits`**                            | `[]`                                                                                         | Maximum joint velocities (rad/s) for each arm joint. If empty the limits from the SRDF will be used.             |
 | **`velocity_limit_satisfaction_max_iterations`** | `3`                                                                                          | Maximum number of recursive scaling iterations to satisfy joint-velocity limits.                                 |
 | **`velocity_limit_satisfaction_multiplicator`**  | `0.33`                                                                                       | Multiplicative factor ($\alpha$) used to scale back target pose when joint-velocity limits are violated.         |
-| **`kinematics_solver`**                          | `trac_ik_kinematics_plugin/TRAC_IKKinematicsPlugin`                                          | Plug-in name for the IK solver.                                                                                  |
-| **`kinematics_solver_timeout`**                  | `0.001`                                                                                      | Timeout for each IK request (seconds). Make sure controller does not take too long.                              |
+
+The following parameters are forwarded to the MoveIt group (set on the `robot_description_kinematics.<group_name>` namespace) and can be overridden via the standard MoveIt kinematics YAML:
+
+| Parameter Name                                   | Default                                                                                      | Description                                                                                                      |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **`kinematics_solver`**                          | `pick_ik/PickIkPlugin`                                                                       | Plug-in name for the IK solver.                                                                                  |
+| **`kinematics_solver_timeout`**                  | `0.05`                                                                                       | Timeout for each IK request (seconds). Make sure controller does not take too long.                              |
 | **`kinematics_solver_attempts`**                 | `3`                                                                                          | Number of IK attempts before failing.                                                                            |
-| **`solve_type`**                                 | `Distance`                                                                                   | Strategy for choosing an IK solution. Options: `Distance` (closest to seed) or `Speed` (fastest).                |
+| **`solve_type`**                                 | `Distance`                                                                                   | `trac_ik`-specific: strategy for choosing an IK solution. Options: `Distance` (closest to seed) or `Speed` (fastest). |
 
 ## Related Controllers
 
-Gripper control and joint/current-limit safety used to live in this package; they now sit in [hector_ros_controllers](../hector_ros_controllers):
+Gripper control and joint/current-limit safety used to live in this package; they now sit in [hector_ros_controllers](https://github.com/tu-darmstadt-ros-pkg/hector_ros_controllers):
 
 - `gripper_position_effort_controller/GripperPositionEffortController` — standalone gripper controller (action + position/velocity topics, optional max-effort limits).
 - `safety_position_controller/SafetyPositionController` — chainable position controller that enforces joint and current limits and runs self-collision avoidance. Use it as the downstream controller by setting this package's `chained_controller` parameter to its name.
