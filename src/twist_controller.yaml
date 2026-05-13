@@ -2,18 +2,10 @@ moveit_twist_controller:
   free_angle:
     type: string
     default_value: ""
-    description: "Axis where the actual rotation is free. -1 means no free angle."
+    description: "Axis where the actual rotation is free. Empty string means no free angle."
     read_only: true
     validation:
       one_of<>: [["","x","y","z"]]
-
-  gripper_joint_name:
-    type: string
-    default_value: "gripper_servo_joint"
-    description: "Name of the gripper joint in the urdf"
-    read_only: true
-    validation:
-      not_empty<>: []
 
   chained_controller:
     type: string
@@ -72,18 +64,8 @@ moveit_twist_controller:
   cmd_timeout:
       type: double
       default_value: 0.25
-      description: "Timeout in seconds after which twist and gripper velocity commands are zeroed if no new message arrives."
+      description: "Timeout in seconds after which twist commands are zeroed if no new message arrives."
       read_only: false
       validation:
         gt<>: 0.0
-
-  gripper_cmd_mode:
-      type: string
-      default_value: "velocity"
-      description: "Mode of the gripper. 'velocity' or 'position'."
-      read_only: false
-      validation:
-        one_of<>: [ [ "velocity", "position" ] ]
-
-
 

@@ -90,22 +90,6 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
   return true;
 }
 
-bool InverseKinematics::getJointLimits( const std::string &joint_name, double &lower, double &upper,
-                                        double &velocity ) const
-{
-  RCLCPP_INFO( node_->get_logger(), "Loading joint limits for %s", joint_name.c_str() );
-  if ( robot_model_ ) {
-    if ( const auto joint_model = robot_model_->getJointModel( joint_name ) ) {
-      const auto bounds = joint_model->getVariableBounds( joint_model->getVariableNames()[0] );
-      lower = bounds.min_position_;
-      upper = bounds.max_position_;
-      velocity = bounds.max_velocity_;
-      return true;
-    }
-  }
-  return false;
-}
-
 bool InverseKinematics::calcInvKin( const Eigen::Affine3d &pose, const std::vector<double> &seed,
                                     std::vector<double> &solution )
 {

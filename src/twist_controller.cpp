@@ -26,9 +26,6 @@ controller_interface::InterfaceConfiguration MoveitTwistController::command_inte
     config.names.push_back( prefix + joint_name + "/position" );
     joint_command_interface_mapping_[joint_name + "/position"] = index++;
   }
-  // The gripper joint (no chained controller prefix)
-  config.names.push_back( params_.gripper_joint_name + std::string( "/position" ) );
-  joint_command_interface_mapping_[params_.gripper_joint_name + "/position"] = index++;
   return config;
 }
 
@@ -56,30 +53,6 @@ controller_interface::CallbackReturn MoveitTwistController::on_init()
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>( *tf_buffer_ );
 
     param_listener_ = std::make_shared<moveit_twist_controller::ParamListener>( get_node() );
-
-    param_callback_handle_ = get_node()->add_on_set_parameters_callback(
-        [this]( const std::vector<rclcpp::Parameter> &params ) {
-          // iterate parameters if it is "gripper_cmd_mode" -> update the mode
-          rcl_interfaces::msg::SetParametersResult result;
-          result.successful = true;
-          for ( const auto &param : params ) {
-            if ( param.get_name() == "gripper_cmd_mode" ) {
-              if ( param.get_type() == rclcpp::ParameterType::PARAMETER_STRING ) {
-                if ( param.as_string() != "velocity" && param.as_string() != "position" ) {
-                  result.successful = false;
-                  result.reason = "gripper_cmd_mode must be either 'velocity' or 'position'";
-                } else {
-                  params_.gripper_cmd_mode = param.as_string();
-                }
-              } else {
-                result.successful = false;
-                result.reason = "gripper_cmd_mode must be a string";
-              }
-              return result;
-            }
-          }
-          return result;
-        } );
   } catch ( const std::exception &e ) {
     RCLCPP_ERROR( get_node()->get_logger(), "Exception during on_init: %s", e.what() );
     return controller_interface::CallbackReturn::ERROR;
@@ -139,11 +112,6 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     previous_goal_state_.resize( arm_joint_names_.size() );
     smoothed_joint_velocities_.assign( arm_joint_names_.size(), 0.0 );
 
-    RCLCPP_INFO( get_node()->get_logger(), "Gripper joint: %s", params_.gripper_joint_name.c_str() );
-    if ( !loadGripperJointLimits() ) {
-      return controller_interface::CallbackReturn::ERROR;
-    }
-
     // Create publishers and subscriptions.
     goal_pose_pub_ =
         get_node()->create_publisher<geometry_msgs::msg::PoseStamped>( "~/goal_pose", 10 );
@@ -190,20 +158,6 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
           cmd.twist.angular = Eigen::Vector3d( ang_out.x(), ang_out.y(), ang_out.z() );
           cmd.stamp = get_node()->now();
           twist_cmd_buf_.writeFromNonRT( cmd );
-        } );
-
-    // Gripper speed subscription
-    gripper_vel_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64>(
-        "~/gripper_vel_cmd", 10, [this]( const std_msgs::msg::Float64::SharedPtr msg ) {
-          GripperVelCommand cmd;
-          cmd.speed = msg->data;
-          cmd.stamp = get_node()->now();
-          gripper_vel_cmd_buf_.writeFromNonRT( cmd );
-        } );
-
-    gripper_pos_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64>(
-        "~/gripper_pos_cmd", 10, [this]( const std_msgs::msg::Float64::SharedPtr msg ) {
-          gripper_cmd_pos_.store( msg->data, std::memory_order_relaxed );
         } );
 
     // Services
@@ -267,19 +221,11 @@ MoveitTwistController::on_activate( const rclcpp_lifecycle::State & /*previous_s
   TwistCommand zero_twist;
   zero_twist.stamp = rclcpp::Time( 0, 0, clock_type );
   twist_cmd_buf_.writeFromNonRT( zero_twist );
-  GripperVelCommand zero_gripper_vel;
-  zero_gripper_vel.stamp = rclcpp::Time( 0, 0, clock_type );
-  gripper_vel_cmd_buf_.writeFromNonRT( zero_gripper_vel );
-  gripper_cmd_pos_.store( 0.0, std::memory_order_relaxed );
   reset_pose_.store( true );
   reset_tool_center_.store( false );
   move_tool_center_.store( false );
   hold_pose_.store( false );
 
-  if ( !getState( gripper_pos_, params_.gripper_joint_name, "position" ) ) {
-    gripper_pos_ = 0.0;
-  }
-  gripper_cmd_speed_ = 0.0;
   std::fill( smoothed_joint_velocities_.begin(), smoothed_joint_velocities_.end(), 0.0 );
 
   initialized_ = true;
@@ -340,18 +286,9 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
       twist_ = twist_cmd.twist;
     }
   }
-  {
-    const auto &gripper_vel_cmd = *gripper_vel_cmd_buf_.readFromRT();
-    if ( ( time - gripper_vel_cmd.stamp ).seconds() > cmd_timeout ) {
-      gripper_cmd_speed_ = 0.0;
-    } else {
-      gripper_cmd_speed_ = gripper_vel_cmd.speed;
-    }
-  }
 
   // Compute next state
   updateArm( time, period );
-  updateGripper( time, period );
 
   publishCollisionMarkers();
 
@@ -545,41 +482,6 @@ bool MoveitTwistController::getState( double &value, const std::string &joint_na
       state_interfaces_[joint_state_interface_mapping_[joint_name + "/" + interface_name]].get_optional();
   value = state.value();
   return state.has_value();
-}
-
-void MoveitTwistController::updateGripper( const rclcpp::Time & /*time*/,
-                                           const rclcpp::Duration &period )
-{
-  gripper_pos_ += period.seconds() * gripper_speed_;
-  gripper_pos_ = std::min( gripper_upper_limit_, std::max( gripper_lower_limit_, gripper_pos_ ) );
-
-  double applied_gripper_vel = 0.0;
-  if ( params_.gripper_cmd_mode == "velocity" ) {
-    applied_gripper_vel = gripper_cmd_speed_;
-  } else if ( params_.gripper_cmd_mode == "position" ) {
-    // use gripper_pose_cmd but make sure the velocity is not too high
-    const double cmd_pos = gripper_cmd_pos_.load( std::memory_order_relaxed );
-    applied_gripper_vel = std::clamp( ( cmd_pos - gripper_pos_ ) / period.seconds(),
-                                      -gripper_max_velocity_limit_, gripper_max_velocity_limit_ );
-  } else {
-    RCLCPP_ERROR( get_node()->get_logger(), "Invalid gripper mode." );
-    // applied_gripper_vel is zero
-  }
-  gripper_pos_ = std::clamp( applied_gripper_vel * period.seconds() + gripper_pos_,
-                             gripper_lower_limit_, gripper_upper_limit_ );
-  if ( !setCommand( gripper_pos_, params_.gripper_joint_name, "position" ) ) {
-    RCLCPP_WARN( get_node()->get_logger(), "Failed to write gripper command to hardware." );
-  }
-}
-
-bool MoveitTwistController::loadGripperJointLimits()
-{
-  if ( !ik_.getJointLimits( params_.gripper_joint_name, gripper_lower_limit_, gripper_upper_limit_,
-                            gripper_max_velocity_limit_ ) ) {
-    RCLCPP_WARN( get_node()->get_logger(), "Failed to load gripper joint limits." );
-    return false;
-  }
-  return true;
 }
 
 void MoveitTwistController::publishCollisionMarkers()
