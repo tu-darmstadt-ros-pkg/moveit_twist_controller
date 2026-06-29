@@ -264,6 +264,9 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
     return controller_interface::return_type::OK;
   }
 
+  // Refresh runtime-updatable parameters (non-blocking, RT-safe)
+  param_listener_->try_update_params( params_ );
+
   // Retrieve current joint states from the hardware (read from state_interfaces_)
   for ( size_t i = 0; i < joint_names_.size(); ++i ) {
     if ( !getState( current_joint_angles_[i], joint_names_[i], "position" ) ) {
