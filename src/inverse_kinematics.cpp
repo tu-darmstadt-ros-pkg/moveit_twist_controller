@@ -169,6 +169,8 @@ std::vector<std::string> InverseKinematics::getGroupJointNames() { return arm_jo
 
 std::vector<std::string> InverseKinematics::getAllJointNames() const { return joint_names_; }
 
+moveit::core::RobotModelConstPtr InverseKinematics::getRobotModel() const { return robot_model_; }
+
 std::string InverseKinematics::getBaseFrame() const
 {
   return joint_model_group_->getSolverInstance()->getBaseFrame();

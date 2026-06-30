@@ -113,6 +113,35 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     previous_goal_state_.resize( arm_joint_names_.size() );
     smoothed_joint_velocities_.assign( arm_joint_names_.size(), 0.0 );
 
+    // Load capability plugins
+    capability_loader_ = std::make_shared<pluginlib::ClassLoader<ControllerCapability>>(
+        "moveit_twist_controller", "moveit_twist_controller::ControllerCapability" );
+
+    CapabilityContext cap_ctx;
+    cap_ctx.node = get_node();
+    cap_ctx.urdf = ik_.getRobotModel()->getURDF();
+    cap_ctx.group_name = params_.group_name;
+    cap_ctx.arm_joint_names = arm_joint_names_;
+    cap_ctx.joint_names = joint_names_;
+
+    capabilities_.clear();
+    for ( const auto &name : params_.capabilities ) {
+      try {
+        auto cap = capability_loader_->createSharedInstance( name );
+        if ( !cap->initialize( cap_ctx ) ) {
+          RCLCPP_ERROR( get_node()->get_logger(), "Capability '%s' failed to initialize.",
+                        name.c_str() );
+          return controller_interface::CallbackReturn::ERROR;
+        }
+        capabilities_.push_back( cap );
+        RCLCPP_INFO( get_node()->get_logger(), "Loaded capability '%s'.", name.c_str() );
+      } catch ( const pluginlib::PluginlibException &e ) {
+        RCLCPP_ERROR( get_node()->get_logger(), "Failed to load capability '%s': %s", name.c_str(),
+                      e.what() );
+        return controller_interface::CallbackReturn::ERROR;
+      }
+    }
+
     // Create publishers and subscriptions.
     goal_pose_pub_ =
         get_node()->create_publisher<geometry_msgs::msg::PoseStamped>( "~/goal_pose", 10 );
@@ -395,6 +424,17 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
       ee_goal_pose_ = old_goal;
       goal_state_ = previous_goal_state_;
       RCLCPP_DEBUG( get_node()->get_logger(), "Collision detected." );
+    } else {
+      // Capability veto (e.g. torque limits). Same revert path as collision.
+      for ( const auto &cap : capabilities_ ) {
+        if ( !cap->isGoalAllowed( goal_state_, current_joint_angles_ ) ) {
+          ee_goal_pose_ = old_goal;
+          goal_state_ = previous_goal_state_;
+          RCLCPP_DEBUG( get_node()->get_logger(), "Capability '%s' vetoed goal.",
+                        cap->getName().c_str() );
+          break;
+        }
+      }
     }
   } else {
     // IK failed
