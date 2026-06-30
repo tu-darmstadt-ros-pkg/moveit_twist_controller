@@ -9,6 +9,7 @@
 
 #include "controller_interface/controller_interface.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
+#include "moveit_twist_controller/controller_capability.hpp"
 #include "moveit_twist_controller/inverse_kinematics.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -19,6 +20,7 @@
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
 #include <moveit_twist_controller/moveit_twist_controller_parameters.hpp>
+#include <pluginlib/class_loader.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
@@ -111,6 +113,12 @@ private:
   std::vector<int> arm_joint_indices_; // indices of arm joints in joint_names_
 
   InverseKinematics ik_;
+
+  // Capability plugins (e.g. torque limiting). The loader must outlive the instances, so it
+  // is declared first: members destruct in reverse declaration order.
+  std::shared_ptr<pluginlib::ClassLoader<ControllerCapability>> capability_loader_;
+  std::vector<std::shared_ptr<ControllerCapability>> capabilities_;
+
   std::atomic<bool> hold_pose_ = false;
   realtime_tools::RealtimeBuffer<geometry_msgs::msg::PoseStamped> hold_goal_pose_buf_;
 

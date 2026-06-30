@@ -21,6 +21,12 @@ moveit_twist_controller:
     validation:
       not_empty<>: [ ]
 
+  capabilities:
+    type: string_array
+    default_value: []
+    description: "Pluginlib class names of ControllerCapability plugins to load at configure time. Each may veto goal states (e.g. torque limiting)."
+    read_only: true
+
   velocity_limits:
       type: double_array
       default_value: []
