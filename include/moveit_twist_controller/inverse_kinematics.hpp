@@ -36,6 +36,8 @@ public:
   std::string getBaseFrame() const;
   std::string getTipFrame() const;
   std::vector<double> getJointVelocityLimits() const;
+  /// Returns the position limits (lower, upper) for the active arm joints, in joint order.
+  std::pair<std::vector<double>, std::vector<double>> getJointPositionLimits() const;
 
 private:
   std::string moveitErrCodeToString( int32_t code );

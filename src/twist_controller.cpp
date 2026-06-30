@@ -113,6 +113,10 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     previous_goal_state_.resize( arm_joint_names_.size() );
     smoothed_joint_velocities_.assign( arm_joint_names_.size(), 0.0 );
 
+    nullspace_bias_.assign( arm_joint_names_.size(), 0.0 );
+    ik_seed_.resize( arm_joint_names_.size() );
+    std::tie( arm_joint_lower_limits_, arm_joint_upper_limits_ ) = ik_.getJointPositionLimits();
+
     // Create publishers and subscriptions.
     goal_pose_pub_ =
         get_node()->create_publisher<geometry_msgs::msg::PoseStamped>( "~/goal_pose", 10 );
@@ -159,6 +163,22 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
           cmd.twist.angular = Eigen::Vector3d( ang_out.x(), ang_out.y(), ang_out.z() );
           cmd.stamp = get_node()->now();
           twist_cmd_buf_.writeFromNonRT( cmd );
+        } );
+
+    // Nullspace bias command subscription: per-arm-joint velocity (rad/s) used to bias joint
+    // motion while the IK keeps the end-effector pose fixed (exploits arm redundancy).
+    nullspace_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64MultiArray>(
+        "~/nullspace_cmd", 10, [this]( const std_msgs::msg::Float64MultiArray::SharedPtr msg ) {
+          if ( msg->data.size() != arm_joint_names_.size() ) {
+            RCLCPP_WARN_THROTTLE( get_node()->get_logger(), *get_node()->get_clock(), 2000,
+                                  "Ignoring nullspace_cmd with size %lu (expected %lu).",
+                                  msg->data.size(), arm_joint_names_.size() );
+            return;
+          }
+          NullspaceCommand cmd;
+          cmd.velocity = msg->data;
+          cmd.stamp = get_node()->now();
+          nullspace_cmd_buf_.writeFromNonRT( cmd );
         } );
 
     // Services
@@ -222,6 +242,11 @@ MoveitTwistController::on_activate( const rclcpp_lifecycle::State & /*previous_s
   TwistCommand zero_twist;
   zero_twist.stamp = rclcpp::Time( 0, 0, clock_type );
   twist_cmd_buf_.writeFromNonRT( zero_twist );
+  NullspaceCommand zero_nullspace;
+  zero_nullspace.velocity.assign( arm_joint_names_.size(), 0.0 );
+  zero_nullspace.stamp = rclcpp::Time( 0, 0, clock_type );
+  nullspace_cmd_buf_.writeFromNonRT( zero_nullspace );
+  std::fill( nullspace_bias_.begin(), nullspace_bias_.end(), 0.0 );
   reset_pose_.store( true );
   reset_tool_center_.store( false );
   move_tool_center_.store( false );
@@ -290,6 +315,15 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
       twist_ = twist_cmd.twist;
     }
   }
+  {
+    const auto &nullspace_cmd = *nullspace_cmd_buf_.readFromRT();
+    if ( ( time - nullspace_cmd.stamp ).seconds() > cmd_timeout ||
+         nullspace_cmd.velocity.size() != nullspace_bias_.size() ) {
+      std::fill( nullspace_bias_.begin(), nullspace_bias_.end(), 0.0 );
+    } else {
+      nullspace_bias_ = nullspace_cmd.velocity;
+    }
+  }
 
   // Compute next state
   updateArm( time, period );
@@ -329,9 +363,42 @@ bool MoveitTwistController::calculateInverseKinematicsConsideringVelocityLimits(
   double factor = 1.0;
   int count = 0;
 
+  // A nullspace bias offsets the IK seed of selected joints so the (closest-to-seed) solver drifts
+  // those joints while keeping the end-effector pose fixed (exploits arm redundancy). The target
+  // pose is left untouched; only the seed is biased. Per-joint steps are clamped to the joint
+  // velocity and position limits, so the bias self-limits at the joint bounds. The final returned
+  // solution is still gated by the max_velocity_factor check below, which is what actually enforces
+  // the velocity limits on the combined (pose + bias) motion.
+  const double dt = period.seconds();
+  bool bias_active = false;
+  for ( const double b : nullspace_bias_ ) {
+    if ( b != 0.0 ) {
+      bias_active = true;
+      break;
+    }
+  }
+
   while ( count++ < params_.velocity_limit_satisfaction_max_iterations ) {
-    // Try IK
-    if ( ik_.calcInvKin( new_eef_pose, previous_goal_state_, goal_state_ ) ) {
+    // Build the (possibly biased) seed. The bias is scaled by the same `factor` used to interpolate
+    // the pose, so when the pose step is pulled back to satisfy velocity limits the joint bias is
+    // pulled back in lockstep instead of fighting the interpolation.
+    const std::vector<double> *seed = &previous_goal_state_;
+    if ( bias_active ) {
+      for ( size_t i = 0; i < ik_seed_.size(); ++i ) {
+        const double max_step = joint_velocity_limits_[i] * dt;
+        const double step = std::clamp( factor * nullspace_bias_[i] * dt, -max_step, max_step );
+        ik_seed_[i] = std::clamp( previous_goal_state_[i] + step, arm_joint_lower_limits_[i],
+                                  arm_joint_upper_limits_[i] );
+      }
+      seed = &ik_seed_;
+    }
+
+    // Try IK with the (possibly biased) seed. If a biased solve fails, retry once with the
+    // un-biased seed so pose tracking is never lost; the bias simply has no effect this tick.
+    bool ok = ik_.calcInvKin( new_eef_pose, *seed, goal_state_ );
+    if ( !ok && bias_active )
+      ok = ik_.calcInvKin( new_eef_pose, previous_goal_state_, goal_state_ );
+    if ( ok ) {
       double max_velocity_factor = 0;
       for ( size_t i = 0; i < goal_state_.size(); ++i ) {
         const double angle_diff =

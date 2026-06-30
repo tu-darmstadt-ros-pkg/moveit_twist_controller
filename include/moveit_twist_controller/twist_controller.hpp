@@ -20,6 +20,7 @@
 #include "tf2_ros/transform_listener.h"
 #include <moveit_twist_controller/moveit_twist_controller_parameters.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
 namespace moveit_twist_controller
@@ -32,6 +33,13 @@ struct Twist {
 
 struct TwistCommand {
   Twist twist = { Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero() };
+  rclcpp::Time stamp = rclcpp::Time( 0, 0, RCL_CLOCK_UNINITIALIZED );
+};
+
+// Desired per-arm-joint nullspace bias velocity (rad/s). Biases joint motion while the IK keeps
+// the end-effector pose fixed, exploiting the redundancy of the arm.
+struct NullspaceCommand {
+  std::vector<double> velocity;
   rclcpp::Time stamp = rclcpp::Time( 0, 0, RCL_CLOCK_UNINITIALIZED );
 };
 
@@ -103,6 +111,12 @@ private:
   std::vector<double> joint_velocity_limits_;
   std::vector<double> smoothed_joint_velocities_;
 
+  realtime_tools::RealtimeBuffer<NullspaceCommand> nullspace_cmd_buf_;
+  std::vector<double> nullspace_bias_;         // active per-joint bias velocity (rad/s)
+  std::vector<double> arm_joint_lower_limits_; // position limits for the arm joints
+  std::vector<double> arm_joint_upper_limits_;
+  std::vector<double> ik_seed_; // preallocated IK seed scratch (avoids RT alloc)
+
   std::vector<std::string> joint_names_;
   std::vector<std::string> arm_joint_names_;
   bool joint_state_received_ = false;
@@ -120,6 +134,7 @@ private:
   mutable std::map<std::string, size_t> joint_command_interface_mapping_;
 
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_cmd_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr nullspace_cmd_sub_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_pose_server_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_tool_center_server_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr hold_pose_server_;
