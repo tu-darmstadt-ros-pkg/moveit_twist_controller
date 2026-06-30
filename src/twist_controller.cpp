@@ -114,8 +114,38 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
     smoothed_joint_velocities_.assign( arm_joint_names_.size(), 0.0 );
 
     nullspace_bias_.assign( arm_joint_names_.size(), 0.0 );
+    joint_cmd_velocity_.assign( arm_joint_names_.size(), 0.0 );
     ik_seed_.resize( arm_joint_names_.size() );
     std::tie( arm_joint_lower_limits_, arm_joint_upper_limits_ ) = ik_.getJointPositionLimits();
+
+    // Load capability plugins
+    capability_loader_ = std::make_shared<pluginlib::ClassLoader<ControllerCapability>>(
+        "moveit_twist_controller", "moveit_twist_controller::ControllerCapability" );
+
+    CapabilityContext cap_ctx;
+    cap_ctx.node = get_node();
+    cap_ctx.urdf = ik_.getRobotModel()->getURDF();
+    cap_ctx.group_name = params_.group_name;
+    cap_ctx.arm_joint_names = arm_joint_names_;
+    cap_ctx.joint_names = joint_names_;
+
+    capabilities_.clear();
+    for ( const auto &name : params_.capabilities ) {
+      try {
+        auto cap = capability_loader_->createSharedInstance( name );
+        if ( !cap->initialize( cap_ctx ) ) {
+          RCLCPP_ERROR( get_node()->get_logger(), "Capability '%s' failed to initialize.",
+                        name.c_str() );
+          return controller_interface::CallbackReturn::ERROR;
+        }
+        capabilities_.push_back( cap );
+        RCLCPP_INFO( get_node()->get_logger(), "Loaded capability '%s'.", name.c_str() );
+      } catch ( const pluginlib::PluginlibException &e ) {
+        RCLCPP_ERROR( get_node()->get_logger(), "Failed to load capability '%s': %s", name.c_str(),
+                      e.what() );
+        return controller_interface::CallbackReturn::ERROR;
+      }
+    }
 
     // Create publishers and subscriptions.
     goal_pose_pub_ =
@@ -179,6 +209,22 @@ MoveitTwistController::on_configure( const rclcpp_lifecycle::State & /*previous_
           cmd.velocity = msg->data;
           cmd.stamp = get_node()->now();
           nullspace_cmd_buf_.writeFromNonRT( cmd );
+        } );
+
+    // Direct joint command subscription: per-arm-joint velocity (rad/s) that drives the joints
+    // directly (no IK). The end-effector pose is NOT held; used for single-joint gamepad jogging.
+    joint_cmd_sub_ = get_node()->create_subscription<std_msgs::msg::Float64MultiArray>(
+        "~/joint_cmd", 10, [this]( const std_msgs::msg::Float64MultiArray::SharedPtr msg ) {
+          if ( msg->data.size() != arm_joint_names_.size() ) {
+            RCLCPP_WARN_THROTTLE( get_node()->get_logger(), *get_node()->get_clock(), 2000,
+                                  "Ignoring joint_cmd with size %lu (expected %lu).",
+                                  msg->data.size(), arm_joint_names_.size() );
+            return;
+          }
+          JointCommand cmd;
+          cmd.velocity = msg->data;
+          cmd.stamp = get_node()->now();
+          joint_cmd_buf_.writeFromNonRT( cmd );
         } );
 
     // Services
@@ -247,6 +293,11 @@ MoveitTwistController::on_activate( const rclcpp_lifecycle::State & /*previous_s
   zero_nullspace.stamp = rclcpp::Time( 0, 0, clock_type );
   nullspace_cmd_buf_.writeFromNonRT( zero_nullspace );
   std::fill( nullspace_bias_.begin(), nullspace_bias_.end(), 0.0 );
+  JointCommand zero_joint;
+  zero_joint.velocity.assign( arm_joint_names_.size(), 0.0 );
+  zero_joint.stamp = rclcpp::Time( 0, 0, clock_type );
+  joint_cmd_buf_.writeFromNonRT( zero_joint );
+  joint_cmd_velocity_.assign( arm_joint_names_.size(), 0.0 );
   reset_pose_.store( true );
   reset_tool_center_.store( false );
   move_tool_center_.store( false );
@@ -322,6 +373,15 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
       std::fill( nullspace_bias_.begin(), nullspace_bias_.end(), 0.0 );
     } else {
       nullspace_bias_ = nullspace_cmd.velocity;
+    }
+  }
+  {
+    const auto &joint_cmd = *joint_cmd_buf_.readFromRT();
+    if ( ( time - joint_cmd.stamp ).seconds() > cmd_timeout ||
+         joint_cmd.velocity.size() != joint_cmd_velocity_.size() ) {
+      std::fill( joint_cmd_velocity_.begin(), joint_cmd_velocity_.end(), 0.0 );
+    } else {
+      joint_cmd_velocity_ = joint_cmd.velocity;
     }
   }
 
@@ -430,8 +490,75 @@ bool MoveitTwistController::calculateInverseKinematicsConsideringVelocityLimits(
   return false;
 }
 
+bool MoveitTwistController::updateArmDirectJoint( const rclcpp::Duration &period )
+{
+  bool active = false;
+  for ( const double v : joint_cmd_velocity_ ) {
+    if ( v != 0.0 ) {
+      active = true;
+      break;
+    }
+  }
+  if ( !active ) {
+    // Falling edge: direct jogging moved the arm without going through the eef goal integrator.
+    // Force the eef path to re-ground its goal pose on the live joint state next tick, otherwise
+    // the first twist command snaps from a stale ee_goal_pose_.
+    if ( direct_joint_was_active_ ) {
+      reset_pose_.store( true );
+      direct_joint_was_active_ = false;
+    }
+    return false;
+  }
+  direct_joint_was_active_ = true;
+
+  // Drive the requested joints directly (no IK). Each step is clamped to the joint velocity and
+  // position limits; the end-effector pose is intentionally NOT held. Collision and capability
+  // (e.g. torque) checks below still gate the motion, so this remains as safe as the eef path.
+  const double dt = period.seconds();
+  const Eigen::Affine3d old_goal = ee_goal_pose_;
+  previous_goal_state_ = goal_state_;
+  for ( size_t i = 0; i < goal_state_.size(); ++i ) {
+    const double max_step = joint_velocity_limits_[i] * dt;
+    const double step = std::clamp( joint_cmd_velocity_[i] * dt, -max_step, max_step );
+    goal_state_[i] = std::clamp( previous_goal_state_[i] + step, arm_joint_lower_limits_[i],
+                                 arm_joint_upper_limits_[i] );
+  }
+  ee_goal_pose_ = ik_.getEndEffectorPose( goal_state_ );
+  tool_goal_pose_ = ee_goal_pose_ * tool_center_offset_;
+
+  contact_map_.clear();
+  sensor_msgs::msg::JointState joint_state;
+  joint_state.name = joint_names_;
+  joint_state.position = current_joint_angles_;
+  bool allowed = ik_.isCollisionFree( joint_state, goal_state_, contact_map_ );
+  if ( allowed ) {
+    for ( const auto &cap : capabilities_ ) {
+      if ( !cap->isGoalAllowed( goal_state_, current_joint_angles_ ) ) {
+        allowed = false;
+        break;
+      }
+    }
+  }
+  if ( !allowed ) {
+    ee_goal_pose_ = old_goal;
+    goal_state_ = previous_goal_state_;
+  }
+  return true;
+}
+
 void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclcpp::Duration &period )
 {
+  // Direct single-joint jogging takes precedence over eef/nullspace motion (it is a held mode on
+  // the gamepad). The goal pose is reset on the next eef command via reset_pose_.
+  if ( updateArmDirectJoint( period ) ) {
+    bool success = true;
+    for ( size_t i = 0; i < arm_joint_names_.size(); ++i )
+      success &= setCommand( goal_state_[i], arm_joint_names_[i], "position" );
+    if ( !success )
+      RCLCPP_WARN( get_node()->get_logger(), "Failed to write next goal state to hardware." );
+    return;
+  }
+
   const Eigen::Affine3d old_goal = ee_goal_pose_;
   previous_goal_state_ = goal_state_;
 
@@ -462,6 +589,17 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
       ee_goal_pose_ = old_goal;
       goal_state_ = previous_goal_state_;
       RCLCPP_DEBUG( get_node()->get_logger(), "Collision detected." );
+    } else {
+      // Capability veto (e.g. torque limits). Same revert path as collision.
+      for ( const auto &cap : capabilities_ ) {
+        if ( !cap->isGoalAllowed( goal_state_, current_joint_angles_ ) ) {
+          ee_goal_pose_ = old_goal;
+          goal_state_ = previous_goal_state_;
+          RCLCPP_DEBUG( get_node()->get_logger(), "Capability '%s' vetoed goal.",
+                        cap->getName().c_str() );
+          break;
+        }
+      }
     }
   } else {
     // IK failed

@@ -33,6 +33,7 @@ public:
 
   std::vector<std::string> getGroupJointNames();
   std::vector<std::string> getAllJointNames() const;
+  moveit::core::RobotModelConstPtr getRobotModel() const;
   std::string getBaseFrame() const;
   std::string getTipFrame() const;
   std::vector<double> getJointVelocityLimits() const;

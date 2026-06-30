@@ -27,8 +27,10 @@ struct CapabilityContext {
   std::vector<std::string> joint_names;
 };
 
-// Base class for pluginlib-loaded controller capabilities. A capability inspects each
-// candidate goal state the controller produces and may veto it.
+// Pluginlib base class for twist-controller capabilities. A capability inspects each candidate IK
+// goal state the controller produces and may veto it (e.g. torque limiting); a vetoed goal is
+// reverted exactly like a collision. Plugins are loaded by class name at configure time via the
+// `capabilities` parameter.
 class ControllerCapability
 {
 public:
@@ -47,6 +49,7 @@ public:
   virtual bool isGoalAllowed( const std::vector<double> &candidate_arm_state,
                               const std::vector<double> &current_joint_angles ) = 0;
 
+  // Human-readable name used in log messages.
   virtual std::string getName() const = 0;
 };
 
