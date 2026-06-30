@@ -1,6 +1,8 @@
 #include <moveit_twist_controller/common.hpp>
 #include <moveit_twist_controller/twist_controller.hpp>
 
+#include <tuple>
+
 #include <tf2_eigen/tf2_eigen.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
@@ -541,6 +543,7 @@ bool MoveitTwistController::updateArmDirectJoint( const rclcpp::Duration &period
   }
   if ( !allowed ) {
     ee_goal_pose_ = old_goal;
+    tool_goal_pose_ = ee_goal_pose_ * tool_center_offset_;
     goal_state_ = previous_goal_state_;
   }
   return true;

@@ -130,7 +130,7 @@ private:
   std::vector<double> nullspace_bias_; // active per-joint bias velocity (rad/s)
 
   realtime_tools::RealtimeBuffer<JointCommand> joint_cmd_buf_;
-  std::vector<double> joint_cmd_velocity_; // active per-joint direct velocity (rad/s); empty = none
+  std::vector<double> joint_cmd_velocity_; // active per-joint direct velocity (rad/s); all zeros = none
 
   std::vector<double> arm_joint_lower_limits_; // position limits for the arm joints
   std::vector<double> arm_joint_upper_limits_;
