@@ -10,6 +10,9 @@
 
 #include <sensor_msgs/msg/joint_state.hpp>
 
+#include <utility>
+#include <vector>
+
 namespace moveit_twist_controller
 {
 

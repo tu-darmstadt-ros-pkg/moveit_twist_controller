@@ -1,6 +1,7 @@
 #include <moveit_twist_controller/common.hpp>
 #include <moveit_twist_controller/twist_controller.hpp>
 
+#include <algorithm>
 #include <tuple>
 
 #include <tf2_eigen/tf2_eigen.hpp>
