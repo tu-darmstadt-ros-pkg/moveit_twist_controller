@@ -22,6 +22,7 @@
 #include <moveit_twist_controller/moveit_twist_controller_parameters.hpp>
 #include <pluginlib/class_loader.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
 namespace moveit_twist_controller
@@ -34,6 +35,20 @@ struct Twist {
 
 struct TwistCommand {
   Twist twist = { Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero() };
+  rclcpp::Time stamp = rclcpp::Time( 0, 0, RCL_CLOCK_UNINITIALIZED );
+};
+
+// Desired per-arm-joint nullspace bias velocity (rad/s). Biases joint motion while the IK keeps
+// the end-effector pose fixed, exploiting the redundancy of the arm.
+struct NullspaceCommand {
+  std::vector<double> velocity;
+  rclcpp::Time stamp = rclcpp::Time( 0, 0, RCL_CLOCK_UNINITIALIZED );
+};
+
+// Desired per-arm-joint direct velocity (rad/s). Drives the arm joints directly (no IK, the
+// end-effector pose is not held); used for single-joint jogging from the gamepad.
+struct JointCommand {
+  std::vector<double> velocity;
   rclcpp::Time stamp = rclcpp::Time( 0, 0, RCL_CLOCK_UNINITIALIZED );
 };
 
@@ -60,6 +75,9 @@ public:
 private:
   void publishStatus() const;
   void updateArm( const rclcpp::Time &time, const rclcpp::Duration &period );
+  /// Direct single-joint jogging path (no IK). Returns true if a non-zero joint command was active
+  /// and handled (so updateArm should write the result and skip the eef/IK path).
+  bool updateArmDirectJoint( const rclcpp::Duration &period );
   bool computeNewGoalPose( const rclcpp::Duration &period );
 
   bool resetPoseCb( const std_srvs::srv::Empty::Request::SharedPtr request,
@@ -86,6 +104,9 @@ private:
 
   bool initialized_ = false;
   bool enabled_ = false;
+  // Tracks whether direct single-joint jogging was active last tick, so we can re-ground the eef
+  // goal pose (via reset_pose_) on the falling edge when the user releases the direct-joint button.
+  bool direct_joint_was_active_ = false;
   std::atomic<bool> reset_pose_ = false;
   std::atomic<bool> reset_tool_center_ = false;
   std::atomic<bool> move_tool_center_ = false;
@@ -104,6 +125,16 @@ private:
   Twist twist_;
   std::vector<double> joint_velocity_limits_;
   std::vector<double> smoothed_joint_velocities_;
+
+  realtime_tools::RealtimeBuffer<NullspaceCommand> nullspace_cmd_buf_;
+  std::vector<double> nullspace_bias_; // active per-joint bias velocity (rad/s)
+
+  realtime_tools::RealtimeBuffer<JointCommand> joint_cmd_buf_;
+  std::vector<double> joint_cmd_velocity_; // active per-joint direct velocity (rad/s); all zeros = none
+
+  std::vector<double> arm_joint_lower_limits_; // position limits for the arm joints
+  std::vector<double> arm_joint_upper_limits_;
+  std::vector<double> ik_seed_; // preallocated IK seed scratch (avoids RT alloc)
 
   std::vector<std::string> joint_names_;
   std::vector<std::string> arm_joint_names_;
@@ -128,6 +159,8 @@ private:
   mutable std::map<std::string, size_t> joint_command_interface_mapping_;
 
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_cmd_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr nullspace_cmd_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr joint_cmd_sub_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_pose_server_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_tool_center_server_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr hold_pose_server_;

@@ -1,3 +1,4 @@
+#include <limits>
 #include <math.h>
 #include <memory>
 #include <moveit_twist_controller/inverse_kinematics.hpp>
@@ -246,6 +247,26 @@ std::vector<double> InverseKinematics::getJointVelocityLimits() const
   std::vector<double> velocity_limits( arm_joint_names_.size() );
   for ( size_t i = 0; i < arm_joint_names_.size(); ++i ) { velocity_limits[i] = limits.first[i]; }
   return velocity_limits;
+}
+
+std::pair<std::vector<double>, std::vector<double>> InverseKinematics::getJointPositionLimits() const
+{
+  std::vector<double> lower( arm_joint_names_.size() );
+  std::vector<double> upper( arm_joint_names_.size() );
+  const auto &active_models = joint_model_group_->getActiveJointModels();
+  for ( size_t i = 0; i < active_models.size(); ++i ) {
+    // First variable bound of each (single-DOF) active joint.
+    const auto &bounds = active_models[i]->getVariableBounds();
+    if ( bounds.empty() || !bounds[0].position_bounded_ ) {
+      // Unbounded (e.g. continuous joint): use +/- infinity so clamping is a no-op.
+      lower[i] = -std::numeric_limits<double>::infinity();
+      upper[i] = std::numeric_limits<double>::infinity();
+    } else {
+      lower[i] = bounds[0].min_position_;
+      upper[i] = bounds[0].max_position_;
+    }
+  }
+  return { lower, upper };
 }
 
 } // namespace moveit_twist_controller

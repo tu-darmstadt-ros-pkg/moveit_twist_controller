@@ -28,6 +28,12 @@ It leverages the MoveIt inverse kinematics interface and requires a [ros_control
 1. **`moveit_twist_controller/eef_cmd`** (`geometry_msgs/TwistStamped`)
     - Receives direct velocity commands for the end-effector in 6D space (linear and angular velocities).
 
+2. **`moveit_twist_controller/nullspace_cmd`** (`std_msgs/Float64MultiArray`)
+    - Per-arm-joint bias velocity (rad/s). Biases joint motion while the IK keeps the end-effector pose fixed.
+
+3. **`moveit_twist_controller/joint_cmd`** (`std_msgs/Float64MultiArray`)
+    - Per-arm-joint direct jog velocity (rad/s). Drives joints directly without IK; the goal pose is reset on the next eef command.
+
 ### Published Topics
 
 1. **`moveit_twist_controller/goal_pose`** (`geometry_msgs/PoseStamped`)
@@ -44,7 +50,7 @@ It leverages the MoveIt inverse kinematics interface and requires a [ros_control
 1. **`moveit_twist_controller/reset_pose`** (`std_srvs/Empty`)
     - Resets the internal goal pose to the current physical pose of the robot.
 
-2. **`moveit_twist_controller/hold_pose`** (`std_srvs/Bool`)
+2. **`moveit_twist_controller/hold_mode`** (`std_srvs/SetBool`)
     - When called with `true`, holds the robot end-effector’s world pose while, for instance, moving the robot base.
     - When called with `false`, normal twist-based motions resume.
 
