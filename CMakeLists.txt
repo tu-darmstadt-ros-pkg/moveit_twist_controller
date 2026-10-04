@@ -97,8 +97,13 @@ if(BUILD_TESTING)
             ros2_control_test_assets
     )
 
-    # If you have additional tests, add them similarly.
-    # ament_add_gmock(...)
+    ament_add_gmock(
+            test_direct_joint_after_reactivation
+            test/test_direct_joint_after_reactivation.cpp
+    )
+    # the library uses TBB (via inverse_kinematics.cpp) without linking it; plugin hosts provide it
+    find_package(TBB REQUIRED)
+    target_link_libraries(test_direct_joint_after_reactivation moveit_twist_controller TBB::tbb)
 endif()
 
 ################################################################################

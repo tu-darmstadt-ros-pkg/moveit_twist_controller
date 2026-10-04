@@ -514,6 +514,15 @@ bool MoveitTwistController::updateArmDirectJoint( const rclcpp::Duration &period
   }
   direct_joint_was_active_ = true;
 
+  // A pending reset (e.g. after re-activation, while other controllers moved the arm) has to
+  // re-ground the goal on the live joint state first, else jogging continues from the stale goal
+  // state and the arm rushes back to it.
+  if ( reset_pose_.exchange( false ) ) {
+    goal_state_ = current_arm_joint_angles;
+    ee_goal_pose_ = ik_.getEndEffectorPose( goal_state_ );
+    tool_goal_pose_ = ee_goal_pose_ * tool_center_offset_;
+  }
+
   // Drive the requested joints directly (no IK). Each step is clamped to the joint velocity and
   // position limits; the end-effector pose is intentionally NOT held. Collision and capability
   // (e.g. torque) checks below still gate the motion, so this remains as safe as the eef path.
