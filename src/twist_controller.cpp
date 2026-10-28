@@ -699,10 +699,10 @@ bool MoveitTwistController::getState( double &value, const std::string &joint_na
 
 void MoveitTwistController::publishCollisionMarkers()
 {
-  if ( !rt_collision_marker_pub_->trylock() )
+  if ( !rt_collision_marker_pub_->can_publish() )
     return;
 
-  auto &marker_array = rt_collision_marker_pub_->msg_;
+  visualization_msgs::msg::MarkerArray marker_array;
   marker_array.markers.clear();
 
   // Always publish a DELETEALL marker first to clear stale markers
@@ -733,7 +733,7 @@ void MoveitTwistController::publishCollisionMarkers()
     }
   }
 
-  rt_collision_marker_pub_->unlockAndPublish();
+  rt_collision_marker_pub_->try_publish( marker_array );
 }
 
 geometry_msgs::msg::PoseStamped MoveitTwistController::getPoseInFrame( const Eigen::Affine3d &pose,

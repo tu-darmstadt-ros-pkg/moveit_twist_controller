@@ -73,7 +73,22 @@ target_include_directories(moveit_twist_controller PUBLIC
 target_link_libraries(moveit_twist_controller PUBLIC
         moveit_twist_controller_parameters
 )
-ament_target_dependencies(moveit_twist_controller PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS})
+target_link_libraries(moveit_twist_controller PUBLIC
+                      moveit_core::moveit_core
+                      moveit_ros_planning::moveit_ros_planning
+                      sensor_msgs::sensor_msgs
+                      urdf::urdf
+                      moveit_msgs::moveit_msgs
+                      visualization_msgs::visualization_msgs
+                      tf2_ros::tf2_ros
+                      controller_interface::controller_interface
+                      hardware_interface::hardware_interface
+                      realtime_tools::realtime_tools
+                      std_msgs::std_msgs
+                      std_srvs::std_srvs
+                      pluginlib::pluginlib
+                      rclcpp::rclcpp
+                      rclcpp_lifecycle::rclcpp_lifecycle)
 pluginlib_export_plugin_description_file(controller_interface moveit_twist_controller.xml)
 ################################################################################
 # Testing
@@ -90,12 +105,10 @@ if(BUILD_TESTING)
             test_load_moveit_twist_controller
             test/test_load_moveit_twist_controller.cpp
     )
-    ament_target_dependencies(
-            test_load_moveit_twist_controller
-            controller_manager
-            hardware_interface
-            ros2_control_test_assets
-    )
+    target_link_libraries(test_load_moveit_twist_controller
+                          controller_manager::controller_manager
+                          hardware_interface::hardware_interface
+                          ros2_control_test_assets::ros2_control_test_assets)
 
     # If you have additional tests, add them similarly.
     # ament_add_gmock(...)
