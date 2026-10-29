@@ -2,7 +2,6 @@
 #include <math.h>
 #include <memory>
 #include <moveit_twist_controller/inverse_kinematics.hpp>
-#include <oneapi/tbb/partitioner.h>
 #include <tf2_eigen/tf2_eigen.hpp>
 
 namespace moveit_twist_controller
