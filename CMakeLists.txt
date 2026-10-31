@@ -115,6 +115,9 @@ if(BUILD_TESTING)
 
     ament_add_gmock(test_semantic_description test/test_semantic_description.cpp)
     target_link_libraries(test_semantic_description moveit_twist_controller)
+
+    ament_add_gmock(test_direct_joint_after_reactivation test/test_direct_joint_after_reactivation.cpp)
+    target_link_libraries(test_direct_joint_after_reactivation moveit_twist_controller)
 endif()
 
 ################################################################################
