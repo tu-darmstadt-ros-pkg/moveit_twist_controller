@@ -693,8 +693,11 @@ bool MoveitTwistController::getState( double &value, const std::string &joint_na
 {
   const auto state =
       state_interfaces_[joint_state_interface_mapping_[joint_name + "/" + interface_name]].get_optional();
-  value = state.value();
-  return state.has_value();
+  if ( !state ) {
+    return false;
+  }
+  value = *state;
+  return true;
 }
 
 void MoveitTwistController::publishCollisionMarkers()
