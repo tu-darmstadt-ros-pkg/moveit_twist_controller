@@ -343,16 +343,17 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
     return controller_interface::return_type::OK;
   }
 
-  // Refresh runtime-updatable parameters (non-blocking, RT-safe)
-  param_listener_->try_update_params( params_ );
-
   // Retrieve current joint states from the hardware (read from state_interfaces_)
   for ( size_t i = 0; i < joint_names_.size(); ++i ) {
     if ( !getState( current_joint_angles_[i], joint_names_[i], "position" ) ) {
-      RCLCPP_WARN( get_node()->get_logger(), "Failed to read joint state from hardware." );
-      return controller_interface::return_type::ERROR;
+      // A handle busy under async hardware is transient, so the commands of the last cycle hold
+      RCLCPP_WARN( get_node()->get_logger(), "Joint state busy, skipping this cycle." );
+      return controller_interface::return_type::OK;
     }
   }
+
+  // Refresh runtime-updatable parameters (non-blocking, RT-safe)
+  param_listener_->try_update_params( params_ );
   // extract arm joint angles
   for ( size_t i = 0; i < arm_joint_indices_.size(); ++i ) {
     current_arm_joint_angles[i] = current_joint_angles_[arm_joint_indices_[i]];
