@@ -359,35 +359,7 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
     current_arm_joint_angles[i] = current_joint_angles_[arm_joint_indices_[i]];
   }
 
-  // Read commands from realtime buffers and apply timeout
-  const double cmd_timeout = params_.cmd_timeout;
-  {
-    const auto &twist_cmd = *twist_cmd_buf_.readFromRT();
-    if ( ( time - twist_cmd.stamp ).seconds() > cmd_timeout ) {
-      twist_.linear = Eigen::Vector3d::Zero();
-      twist_.angular = Eigen::Vector3d::Zero();
-    } else {
-      twist_ = twist_cmd.twist;
-    }
-  }
-  {
-    const auto &nullspace_cmd = *nullspace_cmd_buf_.readFromRT();
-    if ( ( time - nullspace_cmd.stamp ).seconds() > cmd_timeout ||
-         nullspace_cmd.velocity.size() != nullspace_bias_.size() ) {
-      std::fill( nullspace_bias_.begin(), nullspace_bias_.end(), 0.0 );
-    } else {
-      nullspace_bias_ = nullspace_cmd.velocity;
-    }
-  }
-  {
-    const auto &joint_cmd = *joint_cmd_buf_.readFromRT();
-    if ( ( time - joint_cmd.stamp ).seconds() > cmd_timeout ||
-         joint_cmd.velocity.size() != joint_cmd_velocity_.size() ) {
-      std::fill( joint_cmd_velocity_.begin(), joint_cmd_velocity_.end(), 0.0 );
-    } else {
-      joint_cmd_velocity_ = joint_cmd.velocity;
-    }
-  }
+  readCommands();
 
   // Compute next state
   updateArm( time, period );
@@ -402,6 +374,41 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
   goal_pose_pub_->publish( goal_pose_msg );
 
   return controller_interface::return_type::OK;
+}
+
+void MoveitTwistController::readCommands()
+{
+  // The command stamps come from the node clock. The update time comes from the controller
+  // manager's trigger clock, a steady clock outside simulation, so it cannot be compared with them.
+  const rclcpp::Time now = get_node()->now();
+  const double cmd_timeout = params_.cmd_timeout;
+  {
+    const auto &twist_cmd = *twist_cmd_buf_.readFromRT();
+    if ( ( now - twist_cmd.stamp ).seconds() > cmd_timeout ) {
+      twist_.linear = Eigen::Vector3d::Zero();
+      twist_.angular = Eigen::Vector3d::Zero();
+    } else {
+      twist_ = twist_cmd.twist;
+    }
+  }
+  {
+    const auto &nullspace_cmd = *nullspace_cmd_buf_.readFromRT();
+    if ( ( now - nullspace_cmd.stamp ).seconds() > cmd_timeout ||
+         nullspace_cmd.velocity.size() != nullspace_bias_.size() ) {
+      std::fill( nullspace_bias_.begin(), nullspace_bias_.end(), 0.0 );
+    } else {
+      nullspace_bias_ = nullspace_cmd.velocity;
+    }
+  }
+  {
+    const auto &joint_cmd = *joint_cmd_buf_.readFromRT();
+    if ( ( now - joint_cmd.stamp ).seconds() > cmd_timeout ||
+         joint_cmd.velocity.size() != joint_cmd_velocity_.size() ) {
+      std::fill( joint_cmd_velocity_.begin(), joint_cmd_velocity_.end(), 0.0 );
+    } else {
+      joint_cmd_velocity_ = joint_cmd.velocity;
+    }
+  }
 }
 
 double MoveitTwistController::computeJointAngleDiff( const double angle_1, const double angle_2 )

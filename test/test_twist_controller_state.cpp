@@ -4,6 +4,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <string>
+#include <vector>
 
 #define private public
 #define protected public
@@ -66,6 +67,37 @@ TEST( MoveitTwistControllerState, ABusyStateSkipsTheCycleAndKeepsTheCommands )
                controller_interface::return_type::OK );
   }
   EXPECT_DOUBLE_EQ( command->get_optional().value(), 0.7 ) << "the skipped cycle wrote a command";
+}
+
+// Commands are stamped with the node clock, while hcm and ros2_control 6.12 run update() on a
+// steady trigger clock outside simulation
+TEST( MoveitTwistControllerState, AFreshCommandIsTakenOnTheNodeClock )
+{
+  moveit_twist_controller::MoveitTwistController controller;
+  controller_interface::ControllerInterfaceParams params;
+  params.controller_name = "test_moveit_twist_controller";
+  params.update_rate = 50;
+  params.node_options.arguments( { "--ros-args", "--params-file",
+                                   TEST_FILES_DIRECTORY
+                                   "/test_moveit_twist_controller_params.yaml" } );
+  ASSERT_EQ( controller.init( params ), controller_interface::return_type::OK );
+  controller.params_ = controller.param_listener_->get_params();
+  controller.joint_cmd_velocity_.assign( 1, 0.0 );
+  // As on_activate leaves the buffers: zero commands stamped long ago
+  const auto clock_type = controller.get_node()->get_clock()->get_clock_type();
+  moveit_twist_controller::TwistCommand twist;
+  twist.stamp = rclcpp::Time( 0, 0, clock_type );
+  controller.twist_cmd_buf_.writeFromNonRT( twist );
+  moveit_twist_controller::NullspaceCommand nullspace;
+  nullspace.stamp = rclcpp::Time( 0, 0, clock_type );
+  controller.nullspace_cmd_buf_.writeFromNonRT( nullspace );
+
+  moveit_twist_controller::JointCommand command;
+  command.velocity = { 0.5 };
+  command.stamp = controller.get_node()->now();
+  controller.joint_cmd_buf_.writeFromNonRT( command );
+  controller.readCommands();
+  EXPECT_EQ( controller.joint_cmd_velocity_, std::vector<double>{ 0.5 } );
 }
 
 int main( int argc, char **argv )
