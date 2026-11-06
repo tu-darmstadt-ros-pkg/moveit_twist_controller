@@ -100,6 +100,25 @@ TEST( MoveitTwistControllerState, AFreshCommandIsTakenOnTheNodeClock )
   EXPECT_EQ( controller.joint_cmd_velocity_, std::vector<double>{ 0.5 } );
 }
 
+// Under hcm the update time comes from a steady clock, which TF-based displays cannot place
+TEST( MoveitTwistControllerState, TheGoalPoseIsStampedWithTheNodeClock )
+{
+  moveit_twist_controller::MoveitTwistController controller;
+  controller_interface::ControllerInterfaceParams params;
+  params.controller_name = "test_moveit_twist_controller";
+  params.update_rate = 50;
+  params.node_options.arguments( { "--ros-args", "--params-file",
+                                   TEST_FILES_DIRECTORY
+                                   "/test_moveit_twist_controller_params.yaml" } );
+  ASSERT_EQ( controller.init( params ), controller_interface::return_type::OK );
+
+  const auto goal_pose = controller.goalPose( "arm_base_link" );
+  EXPECT_EQ( goal_pose.header.frame_id, "arm_base_link" );
+  const rclcpp::Time now = controller.get_node()->now();
+  EXPECT_NEAR( ( now - rclcpp::Time( goal_pose.header.stamp, now.get_clock_type() ) ).seconds(),
+               0.0, 1.0 );
+}
+
 int main( int argc, char **argv )
 {
   ::testing::InitGoogleMock( &argc, argv );

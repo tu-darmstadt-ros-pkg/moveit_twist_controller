@@ -366,14 +366,19 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
 
   publishCollisionMarkers();
 
-  // Publish goal pose
-  geometry_msgs::msg::PoseStamped goal_pose_msg;
-  goal_pose_msg.header.frame_id = ik_.getBaseFrame();
-  goal_pose_msg.pose = tf2::toMsg( tool_goal_pose_ );
-  goal_pose_msg.header.stamp = time;
-  goal_pose_pub_->publish( goal_pose_msg );
+  goal_pose_pub_->publish( goalPose( ik_.getBaseFrame() ) );
 
   return controller_interface::return_type::OK;
+}
+
+geometry_msgs::msg::PoseStamped MoveitTwistController::goalPose( const std::string &frame ) const
+{
+  geometry_msgs::msg::PoseStamped goal_pose;
+  goal_pose.header.frame_id = frame;
+  // TF and displays expect the node clock, the update time may come from a steady clock
+  goal_pose.header.stamp = get_node()->now();
+  goal_pose.pose = tf2::toMsg( tool_goal_pose_ );
+  return goal_pose;
 }
 
 void MoveitTwistController::readCommands()

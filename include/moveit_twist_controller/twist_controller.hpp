@@ -76,6 +76,7 @@ private:
   void publishStatus() const;
   /// Takes the latest commands, or zero for those older than cmd_timeout.
   void readCommands();
+  geometry_msgs::msg::PoseStamped goalPose( const std::string &frame ) const;
   void updateArm( const rclcpp::Time &time, const rclcpp::Duration &period );
   /// Direct single-joint jogging path (no IK). Returns true if a non-zero joint command was active
   /// and handled (so updateArm should write the result and skip the eef/IK path).
