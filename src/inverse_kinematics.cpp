@@ -6,6 +6,13 @@
 
 namespace moveit_twist_controller
 {
+std::string semanticDescriptionParameter( const rclcpp_lifecycle::LifecycleNode::SharedPtr &node )
+{
+  if ( !node->has_parameter( "robot_description_semantic" ) )
+    node->declare_parameter<std::string>( "robot_description_semantic", "" );
+  return node->get_parameter( "robot_description_semantic" ).as_string();
+}
+
 bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node,
                               rclcpp::Node::SharedPtr node, const std::string &group_name,
                               const std::string &robot_description,
@@ -23,13 +30,10 @@ bool InverseKinematics::init( rclcpp_lifecycle::LifecycleNode::SharedPtr lifecyc
   }
 
   // Get robot_description_semantic: first try parameter, then fall back to topic
-  std::string robot_description_semantic;
-  if ( lifecycle_node_->has_parameter( "robot_description_semantic" ) ) {
-    robot_description_semantic =
-        lifecycle_node_->get_parameter( "robot_description_semantic" ).as_string();
+  std::string robot_description_semantic = semanticDescriptionParameter( lifecycle_node_ );
+  if ( !robot_description_semantic.empty() ) {
     RCLCPP_INFO( node_->get_logger(), "Loaded robot_description_semantic from parameter." );
-  }
-  if ( robot_description_semantic.empty() ) {
+  } else {
     RCLCPP_INFO( node_->get_logger(),
                  "robot_description_semantic parameter not set, subscribing to topic." );
     robot_description_semantic =
