@@ -15,6 +15,8 @@
 #include <hardware_interface/handle.hpp>
 #include <hardware_interface/loaned_command_interface.hpp>
 #include <hardware_interface/loaned_state_interface.hpp>
+#include <moveit/kinematics_base/kinematics_base.hpp>
+#include <moveit/utils/robot_model_test_utils.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 // A state handle locked by another thread is contention, not a reason to throw from update()
@@ -117,6 +119,178 @@ TEST( MoveitTwistControllerState, TheGoalPoseIsStampedWithTheNodeClock )
   const rclcpp::Time now = controller.get_node()->now();
   EXPECT_NEAR( ( now - rclcpp::Time( goal_pose.header.stamp, now.get_clock_type() ) ).seconds(),
                0.0, 1.0 );
+}
+
+// A solver for a single prismatic joint along x that counts its solves
+class CountingSolver : public kinematics::KinematicsBase
+{
+public:
+  explicit CountingSolver( const std::vector<std::string> &joint_names )
+      : joint_names_( joint_names )
+  {
+    base_frame_ = "base";
+    tip_frames_ = { "tip" };
+  }
+
+  bool getPositionIK( const geometry_msgs::msg::Pose &, const std::vector<double> &,
+                      std::vector<double> &, moveit_msgs::msg::MoveItErrorCodes &,
+                      const kinematics::KinematicsQueryOptions & ) const override
+  { return false; }
+  bool searchPositionIK( const geometry_msgs::msg::Pose &pose, const std::vector<double> &, double,
+                         std::vector<double> &solution, moveit_msgs::msg::MoveItErrorCodes &,
+                         const kinematics::KinematicsQueryOptions & ) const override
+  {
+    ++solves;
+    solution = { pose.position.x };
+    return true;
+  }
+  bool searchPositionIK( const geometry_msgs::msg::Pose &, const std::vector<double> &, double,
+                         const std::vector<double> &, std::vector<double> &,
+                         moveit_msgs::msg::MoveItErrorCodes &,
+                         const kinematics::KinematicsQueryOptions & ) const override
+  { return false; }
+  bool searchPositionIK( const geometry_msgs::msg::Pose &, const std::vector<double> &, double,
+                         std::vector<double> &, const IKCallbackFn &,
+                         moveit_msgs::msg::MoveItErrorCodes &,
+                         const kinematics::KinematicsQueryOptions & ) const override
+  { return false; }
+  bool searchPositionIK( const geometry_msgs::msg::Pose &, const std::vector<double> &, double,
+                         const std::vector<double> &, std::vector<double> &, const IKCallbackFn &,
+                         moveit_msgs::msg::MoveItErrorCodes &,
+                         const kinematics::KinematicsQueryOptions & ) const override
+  { return false; }
+  bool getPositionFK( const std::vector<std::string> &, const std::vector<double> &joint_angles,
+                      std::vector<geometry_msgs::msg::Pose> &poses ) const override
+  {
+    poses.assign( 1, geometry_msgs::msg::Pose() );
+    poses[0].position.x = joint_angles[0];
+    return true;
+  }
+  const std::vector<std::string> &getJointNames() const override { return joint_names_; }
+  const std::vector<std::string> &getLinkNames() const override { return tip_frames_; }
+
+  mutable int solves = 0;
+
+private:
+  std::vector<std::string> joint_names_;
+};
+
+// An active controller on a one joint arm whose IK is a CountingSolver
+class ActiveController : public ::testing::Test
+{
+protected:
+  void SetUp() override
+  {
+    controller_interface::ControllerInterfaceParams params;
+    params.controller_name = "test_moveit_twist_controller";
+    params.update_rate = 50;
+    params.node_options.arguments( { "--ros-args", "--params-file",
+                                     TEST_FILES_DIRECTORY
+                                     "/test_moveit_twist_controller_params.yaml" } );
+    ASSERT_EQ( controller.init( params ), controller_interface::return_type::OK );
+    controller.params_ = controller.param_listener_->get_params();
+
+    moveit::core::RobotModelBuilder builder( "arm", "base" );
+    builder.addChain( "base->tip", "prismatic" );
+    builder.addGroupChain( "base", "tip", "arm" );
+    const auto model = builder.build();
+    ASSERT_TRUE( model );
+    auto *group = model->getJointModelGroup( "arm" );
+    const auto joint_names = group->getActiveJointModelNames();
+    group->setSolverAllocators( [this, joint_names]( const moveit::core::JointModelGroup * ) {
+      auto solver = std::make_shared<CountingSolver>( joint_names );
+      solver_ = solver.get();
+      return solver;
+    } );
+    ASSERT_NE( solver_, nullptr );
+
+    auto &ik = controller.ik_;
+    ik.robot_model_ = model;
+    ik.joint_model_group_ = group;
+    ik.robot_state_ = std::make_shared<moveit::core::RobotState>( model );
+    ik.planning_scene_ = std::make_shared<planning_scene::PlanningScene>( model );
+    ik.arm_joint_names_ = joint_names;
+    ik.node_ = rclcpp::Node::make_shared( "counting_ik" );
+
+    controller.joint_names_ = joint_names;
+    controller.arm_joint_names_ = joint_names;
+    controller.arm_joint_indices_ = { 0 };
+    for ( auto *v : { &controller.current_joint_angles_, &controller.current_arm_joint_angles,
+                      &controller.goal_state_, &controller.previous_goal_state_, &controller.ik_seed_,
+                      &controller.nullspace_bias_, &controller.smoothed_joint_velocities_ } )
+      v->assign( 1, 0.0 );
+    controller.joint_velocity_limits_ = { 1.0 };
+    controller.arm_joint_lower_limits_ = { -1.0 };
+    controller.arm_joint_upper_limits_ = { 1.0 };
+
+    state_ = std::make_shared<hardware_interface::StateInterface>( joint_names[0], "position",
+                                                                   "double", "0.3" );
+    controller.state_interfaces_.emplace_back( state_ );
+    controller.joint_state_interface_mapping_[joint_names[0] + "/position"] = 0;
+    command_ = std::make_shared<hardware_interface::CommandInterface>( joint_names[0], "position",
+                                                                       "double", "0.0" );
+    controller.command_interfaces_.emplace_back( command_ );
+    controller.joint_command_interface_mapping_[joint_names[0] + "/position"] = 0;
+
+    const auto node = controller.get_node();
+    controller.goal_pose_pub_ =
+        node->create_publisher<geometry_msgs::msg::PoseStamped>( "~/goal_pose", 10 );
+    controller.collision_marker_pub_ =
+        node->create_publisher<visualization_msgs::msg::MarkerArray>( "~/collision_markers", 10 );
+    controller.rt_collision_marker_pub_ =
+        std::make_unique<realtime_tools::RealtimePublisher<visualization_msgs::msg::MarkerArray>>(
+            controller.collision_marker_pub_ );
+    controller.enabled_pub_ = node->create_publisher<std_msgs::msg::Bool>( "~/enabled", 10 );
+    ASSERT_EQ( controller.on_activate( rclcpp_lifecycle::State() ),
+               controller_interface::CallbackReturn::SUCCESS );
+  }
+
+  void update()
+  {
+    ASSERT_EQ( controller.update( rclcpp::Time( 0, 0 ), rclcpp::Duration::from_seconds( 0.02 ) ),
+               controller_interface::return_type::OK );
+  }
+
+  void sendTwist( const double linear_x, const rclcpp::Time &stamp )
+  {
+    moveit_twist_controller::TwistCommand twist;
+    twist.twist.linear = Eigen::Vector3d( linear_x, 0.0, 0.0 );
+    twist.twist.angular = Eigen::Vector3d::Zero();
+    twist.stamp = stamp;
+    controller.twist_cmd_buf_.writeFromNonRT( twist );
+  }
+
+  double commanded() const { return command_->get_optional().value(); }
+
+  moveit_twist_controller::MoveitTwistController controller;
+  CountingSolver *solver_ = nullptr;
+  std::shared_ptr<hardware_interface::StateInterface> state_;
+  std::shared_ptr<hardware_interface::CommandInterface> command_;
+};
+
+// Each solve may take 10 ms on the RT thread, so without input update() keeps the last goal
+TEST_F( ActiveController, DoesNotSolveWithoutInput )
+{
+  update();
+  EXPECT_EQ( solver_->solves, 1 ) << "the first cycle did not ground the goal on the joint state";
+  EXPECT_DOUBLE_EQ( commanded(), 0.3 );
+
+  const rclcpp::Time now = controller.get_node()->now();
+  sendTwist( 0.1, now - rclcpp::Duration::from_seconds( 10.0 * controller.params_.cmd_timeout ) );
+  for ( int i = 0; i < 10; ++i ) update();
+  EXPECT_EQ( solver_->solves, 1 );
+  EXPECT_DOUBLE_EQ( commanded(), 0.3 );
+}
+
+TEST_F( ActiveController, SolvesInTheCycleACommandArrivesAfterIdle )
+{
+  for ( int i = 0; i < 5; ++i ) update();
+  const int idle_solves = solver_->solves;
+
+  sendTwist( 0.1, controller.get_node()->now() );
+  update();
+  EXPECT_GT( solver_->solves, idle_solves );
+  EXPECT_NEAR( commanded(), 0.3 + 0.1 * 0.02, 1e-9 );
 }
 
 int main( int argc, char **argv )

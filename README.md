@@ -78,6 +78,8 @@ The following parameters are forwarded to the MoveIt group (set on the `robot_de
 
 `update()` solves IK in the control loop. Each solve may take up to 10 ms, and a cycle runs up to two solves per
 velocity limit iteration plus a self-collision check, so a cycle can take far longer than one control period.
+Without a twist, nullspace or joint command and with an unchanged goal pose, a cycle skips the solve and keeps the
+last goal.
 
 ## Related Controllers
 

@@ -568,19 +568,21 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
   // Direct single-joint jogging takes precedence over eef/nullspace motion (it is a held mode on
   // the gamepad). The goal pose is reset on the next eef command via reset_pose_.
   if ( updateArmDirectJoint( period ) ) {
-    bool success = true;
-    for ( size_t i = 0; i < arm_joint_names_.size(); ++i )
-      success &= setCommand( goal_state_[i], arm_joint_names_[i], "position" );
-    if ( !success )
-      RCLCPP_WARN( get_node()->get_logger(), "Failed to write next goal state to hardware." );
+    writeGoalState();
     return;
   }
 
   const Eigen::Affine3d old_goal = ee_goal_pose_;
   previous_goal_state_ = goal_state_;
 
-  // Compute new goal pose
-  computeNewGoalPose( period );
+  // Without input or a smoothing coast the solve returns the last goal at a cost of up to tens of ms
+  const auto is_zero = []( const double v ) { return v == 0.0; };
+  if ( !computeNewGoalPose( period ) &&
+       std::all_of( nullspace_bias_.begin(), nullspace_bias_.end(), is_zero ) &&
+       std::all_of( smoothed_joint_velocities_.begin(), smoothed_joint_velocities_.end(), is_zero ) ) {
+    writeGoalState();
+    return;
+  }
 
   // Compute IK
   if ( calculateInverseKinematicsConsideringVelocityLimits( ee_goal_pose_, old_goal, period ) ) {
@@ -624,9 +626,12 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     goal_state_ = previous_goal_state_;
     RCLCPP_DEBUG( get_node()->get_logger(), "IK failed." );
   }
+  writeGoalState();
+}
 
+void MoveitTwistController::writeGoalState()
+{
   bool success = true;
-  // Write next goal state to command_interfaces_
   for ( size_t i = 0; i < arm_joint_names_.size(); ++i ) {
     success &= setCommand( goal_state_[i], arm_joint_names_[i], "position" );
   }
@@ -666,7 +671,10 @@ bool MoveitTwistController::computeNewGoalPose( const rclcpp::Duration &period )
     Eigen::Affine3d base_to_frame = tf2::transformToEigen( transform_stamped.transform );
     Eigen::Affine3d frame_to_ee;
     tf2::fromMsg( hold_goal_pose.pose, frame_to_ee );
-    ee_goal_pose_ = base_to_frame * frame_to_ee;
+    const Eigen::Affine3d hold_goal = base_to_frame * frame_to_ee;
+    if ( hold_goal.matrix() == ee_goal_pose_.matrix() )
+      return false;
+    ee_goal_pose_ = hold_goal;
     tool_goal_pose_ = ee_goal_pose_ * tool_center_offset_;
     return true;
   }
