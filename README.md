@@ -72,9 +72,12 @@ The following parameters are forwarded to the MoveIt group (set on the `robot_de
 | Parameter Name                                   | Default                                                                                      | Description                                                                                                      |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | **`kinematics_solver`**                          | `pick_ik/PickIkPlugin`                                                                       | Plug-in name for the IK solver.                                                                                  |
-| **`kinematics_solver_timeout`**                  | `0.05`                                                                                       | Timeout for each IK request (seconds). Make sure controller does not take too long.                              |
+| **`kinematics_solver_timeout`**                  | `0.05`                                                                                       | Default solver timeout (seconds). The per-cycle IK in `update()` passes its own 10 ms instead, see below.        |
 | **`kinematics_solver_attempts`**                 | `3`                                                                                          | Number of IK attempts before failing.                                                                            |
 | **`solve_type`**                                 | `Distance`                                                                                   | `trac_ik`-specific: strategy for choosing an IK solution. Options: `Distance` (closest to seed) or `Speed` (fastest). |
+
+`update()` solves IK in the control loop. Each solve may take up to 10 ms, and a cycle runs up to two solves per
+velocity limit iteration plus a self-collision check, so a cycle can take far longer than one control period.
 
 ## Related Controllers
 

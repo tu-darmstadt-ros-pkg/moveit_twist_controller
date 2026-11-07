@@ -83,7 +83,7 @@ TEST( MoveitTwistControllerState, AFreshCommandIsTakenOnTheNodeClock )
   ASSERT_EQ( controller.init( params ), controller_interface::return_type::OK );
   controller.params_ = controller.param_listener_->get_params();
   controller.joint_cmd_velocity_.assign( 1, 0.0 );
-  // As on_activate leaves the buffers: zero commands stamped long ago
+  // Zero commands stamped long ago, as on_activate leaves the buffers
   const auto clock_type = controller.get_node()->get_clock()->get_clock_type();
   moveit_twist_controller::TwistCommand twist;
   twist.stamp = rclcpp::Time( 0, 0, clock_type );
