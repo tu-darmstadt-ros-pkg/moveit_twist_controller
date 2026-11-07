@@ -293,6 +293,31 @@ TEST_F( ActiveController, SolvesInTheCycleACommandArrivesAfterIdle )
   EXPECT_NEAR( commanded(), 0.3 + 0.1 * 0.02, 1e-9 );
 }
 
+// A held goal lives in another frame, so moving that frame must move the arm without any input
+TEST_F( ActiveController, HoldModeSolvesWhenTheHeldFrameMoves )
+{
+  update();
+  geometry_msgs::msg::TransformStamped base_to_odom;
+  base_to_odom.header.frame_id = "base";
+  base_to_odom.child_frame_id = "odom";
+  base_to_odom.transform.rotation.w = 1.0;
+  ASSERT_TRUE( controller.tf_buffer_->setTransform( base_to_odom, "test", true ) );
+  geometry_msgs::msg::PoseStamped hold_goal;
+  hold_goal.header.frame_id = "odom";
+  hold_goal.pose.position.x = 0.3;
+  controller.hold_goal_pose_buf_.writeFromNonRT( hold_goal );
+  controller.hold_pose_.store( true );
+  for ( int i = 0; i < 5; ++i ) update();
+  const int held_solves = solver_->solves;
+  EXPECT_DOUBLE_EQ( commanded(), 0.3 );
+
+  base_to_odom.transform.translation.x = 0.01;
+  ASSERT_TRUE( controller.tf_buffer_->setTransform( base_to_odom, "test", true ) );
+  update();
+  EXPECT_GT( solver_->solves, held_solves );
+  EXPECT_NEAR( commanded(), 0.31, 1e-9 );
+}
+
 int main( int argc, char **argv )
 {
   ::testing::InitGoogleMock( &argc, argv );
