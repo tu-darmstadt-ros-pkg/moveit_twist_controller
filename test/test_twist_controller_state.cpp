@@ -318,6 +318,31 @@ TEST_F( ActiveController, HoldModeSolvesWhenTheHeldFrameMoves )
   EXPECT_NEAR( commanded(), 0.31, 1e-9 );
 }
 
+// With smoothing the arm coasts after the input ends, so the solve must go on until it stops
+TEST_F( ActiveController, SmoothingKeepsSolvingUntilTheCoastEnds )
+{
+  controller.get_node()->set_parameter( rclcpp::Parameter( "joint_velocity_smoothing_factor", 0.5 ) );
+  update();
+  for ( int i = 0; i < 5; ++i ) {
+    sendTwist( 0.5, controller.get_node()->now() );
+    update();
+  }
+
+  sendTwist( 0.0, controller.get_node()->now() );
+  const int solves_at_release = solver_->solves;
+  const double position_at_release = commanded();
+  update();
+  EXPECT_GT( solver_->solves, solves_at_release );
+  EXPECT_GT( commanded(), position_at_release ) << "the arm did not coast";
+
+  int cycles = 0;
+  while ( controller.smoothed_joint_velocities_[0] != 0.0 && cycles++ < 2000 ) update();
+  ASSERT_EQ( controller.smoothed_joint_velocities_[0], 0.0 ) << "the coast did not end";
+  const int solves_at_rest = solver_->solves;
+  for ( int i = 0; i < 5; ++i ) update();
+  EXPECT_EQ( solver_->solves, solves_at_rest );
+}
+
 int main( int argc, char **argv )
 {
   ::testing::InitGoogleMock( &argc, argv );
