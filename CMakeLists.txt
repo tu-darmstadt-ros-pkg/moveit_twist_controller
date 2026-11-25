@@ -110,8 +110,11 @@ if(BUILD_TESTING)
                           hardware_interface::hardware_interface
                           ros2_control_test_assets::ros2_control_test_assets)
 
-    # If you have additional tests, add them similarly.
-    # ament_add_gmock(...)
+    ament_add_gmock(test_twist_controller_state test/test_twist_controller_state.cpp)
+    target_link_libraries(test_twist_controller_state moveit_twist_controller)
+
+    ament_add_gmock(test_semantic_description test/test_semantic_description.cpp)
+    target_link_libraries(test_semantic_description moveit_twist_controller)
 endif()
 
 ################################################################################

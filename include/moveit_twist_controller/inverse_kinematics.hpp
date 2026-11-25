@@ -16,6 +16,10 @@
 namespace moveit_twist_controller
 {
 
+/// The SRDF passed to @p node as a parameter, empty if none. Declares the parameter, because the
+/// controller manager passes it as an override, which only a declared parameter sees.
+std::string semanticDescriptionParameter( const rclcpp_lifecycle::LifecycleNode::SharedPtr &node );
+
 class InverseKinematics
 {
 public:

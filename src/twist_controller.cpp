@@ -343,26 +343,53 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
     return controller_interface::return_type::OK;
   }
 
-  // Refresh runtime-updatable parameters (non-blocking, RT-safe)
-  param_listener_->try_update_params( params_ );
-
   // Retrieve current joint states from the hardware (read from state_interfaces_)
   for ( size_t i = 0; i < joint_names_.size(); ++i ) {
     if ( !getState( current_joint_angles_[i], joint_names_[i], "position" ) ) {
-      RCLCPP_WARN( get_node()->get_logger(), "Failed to read joint state from hardware." );
-      return controller_interface::return_type::ERROR;
+      // A handle busy under async hardware is transient, so the commands of the last cycle hold
+      RCLCPP_WARN( get_node()->get_logger(), "Joint state busy, skipping this cycle." );
+      return controller_interface::return_type::OK;
     }
   }
+
+  // Refresh runtime-updatable parameters (non-blocking, RT-safe)
+  param_listener_->try_update_params( params_ );
   // extract arm joint angles
   for ( size_t i = 0; i < arm_joint_indices_.size(); ++i ) {
     current_arm_joint_angles[i] = current_joint_angles_[arm_joint_indices_[i]];
   }
 
-  // Read commands from realtime buffers and apply timeout
+  readCommands();
+
+  // Compute next state
+  updateArm( time, period );
+
+  publishCollisionMarkers();
+
+  goal_pose_pub_->publish( goalPose( ik_.getBaseFrame() ) );
+
+  return controller_interface::return_type::OK;
+}
+
+geometry_msgs::msg::PoseStamped MoveitTwistController::goalPose( const std::string &frame ) const
+{
+  geometry_msgs::msg::PoseStamped goal_pose;
+  goal_pose.header.frame_id = frame;
+  // TF and displays expect the node clock, the update time may come from a steady clock
+  goal_pose.header.stamp = get_node()->now();
+  goal_pose.pose = tf2::toMsg( tool_goal_pose_ );
+  return goal_pose;
+}
+
+void MoveitTwistController::readCommands()
+{
+  // The command stamps come from the node clock. The update time comes from the controller
+  // manager's trigger clock, a steady clock outside simulation, so it cannot be compared with them.
+  const rclcpp::Time now = get_node()->now();
   const double cmd_timeout = params_.cmd_timeout;
   {
     const auto &twist_cmd = *twist_cmd_buf_.readFromRT();
-    if ( ( time - twist_cmd.stamp ).seconds() > cmd_timeout ) {
+    if ( ( now - twist_cmd.stamp ).seconds() > cmd_timeout ) {
       twist_.linear = Eigen::Vector3d::Zero();
       twist_.angular = Eigen::Vector3d::Zero();
     } else {
@@ -371,7 +398,7 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
   }
   {
     const auto &nullspace_cmd = *nullspace_cmd_buf_.readFromRT();
-    if ( ( time - nullspace_cmd.stamp ).seconds() > cmd_timeout ||
+    if ( ( now - nullspace_cmd.stamp ).seconds() > cmd_timeout ||
          nullspace_cmd.velocity.size() != nullspace_bias_.size() ) {
       std::fill( nullspace_bias_.begin(), nullspace_bias_.end(), 0.0 );
     } else {
@@ -380,27 +407,13 @@ controller_interface::return_type MoveitTwistController::update( const rclcpp::T
   }
   {
     const auto &joint_cmd = *joint_cmd_buf_.readFromRT();
-    if ( ( time - joint_cmd.stamp ).seconds() > cmd_timeout ||
+    if ( ( now - joint_cmd.stamp ).seconds() > cmd_timeout ||
          joint_cmd.velocity.size() != joint_cmd_velocity_.size() ) {
       std::fill( joint_cmd_velocity_.begin(), joint_cmd_velocity_.end(), 0.0 );
     } else {
       joint_cmd_velocity_ = joint_cmd.velocity;
     }
   }
-
-  // Compute next state
-  updateArm( time, period );
-
-  publishCollisionMarkers();
-
-  // Publish goal pose
-  geometry_msgs::msg::PoseStamped goal_pose_msg;
-  goal_pose_msg.header.frame_id = ik_.getBaseFrame();
-  goal_pose_msg.pose = tf2::toMsg( tool_goal_pose_ );
-  goal_pose_msg.header.stamp = time;
-  goal_pose_pub_->publish( goal_pose_msg );
-
-  return controller_interface::return_type::OK;
 }
 
 double MoveitTwistController::computeJointAngleDiff( const double angle_1, const double angle_2 )
@@ -555,19 +568,21 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
   // Direct single-joint jogging takes precedence over eef/nullspace motion (it is a held mode on
   // the gamepad). The goal pose is reset on the next eef command via reset_pose_.
   if ( updateArmDirectJoint( period ) ) {
-    bool success = true;
-    for ( size_t i = 0; i < arm_joint_names_.size(); ++i )
-      success &= setCommand( goal_state_[i], arm_joint_names_[i], "position" );
-    if ( !success )
-      RCLCPP_WARN( get_node()->get_logger(), "Failed to write next goal state to hardware." );
+    writeGoalState();
     return;
   }
 
   const Eigen::Affine3d old_goal = ee_goal_pose_;
   previous_goal_state_ = goal_state_;
 
-  // Compute new goal pose
-  computeNewGoalPose( period );
+  // Without input or a smoothing coast the solve returns the last goal at a cost of up to tens of ms
+  const auto is_zero = []( const double v ) { return v == 0.0; };
+  if ( !computeNewGoalPose( period ) &&
+       std::all_of( nullspace_bias_.begin(), nullspace_bias_.end(), is_zero ) &&
+       std::all_of( smoothed_joint_velocities_.begin(), smoothed_joint_velocities_.end(), is_zero ) ) {
+    writeGoalState();
+    return;
+  }
 
   // Compute IK
   if ( calculateInverseKinematicsConsideringVelocityLimits( ee_goal_pose_, old_goal, period ) ) {
@@ -611,9 +626,12 @@ void MoveitTwistController::updateArm( const rclcpp::Time & /*time*/, const rclc
     goal_state_ = previous_goal_state_;
     RCLCPP_DEBUG( get_node()->get_logger(), "IK failed." );
   }
+  writeGoalState();
+}
 
+void MoveitTwistController::writeGoalState()
+{
   bool success = true;
-  // Write next goal state to command_interfaces_
   for ( size_t i = 0; i < arm_joint_names_.size(); ++i ) {
     success &= setCommand( goal_state_[i], arm_joint_names_[i], "position" );
   }
@@ -653,7 +671,10 @@ bool MoveitTwistController::computeNewGoalPose( const rclcpp::Duration &period )
     Eigen::Affine3d base_to_frame = tf2::transformToEigen( transform_stamped.transform );
     Eigen::Affine3d frame_to_ee;
     tf2::fromMsg( hold_goal_pose.pose, frame_to_ee );
-    ee_goal_pose_ = base_to_frame * frame_to_ee;
+    const Eigen::Affine3d hold_goal = base_to_frame * frame_to_ee;
+    if ( hold_goal.matrix() == ee_goal_pose_.matrix() )
+      return false;
+    ee_goal_pose_ = hold_goal;
     tool_goal_pose_ = ee_goal_pose_ * tool_center_offset_;
     return true;
   }
@@ -693,8 +714,11 @@ bool MoveitTwistController::getState( double &value, const std::string &joint_na
 {
   const auto state =
       state_interfaces_[joint_state_interface_mapping_[joint_name + "/" + interface_name]].get_optional();
-  value = state.value();
-  return state.has_value();
+  if ( !state ) {
+    return false;
+  }
+  value = *state;
+  return true;
 }
 
 void MoveitTwistController::publishCollisionMarkers()
