@@ -135,7 +135,9 @@ public:
   bool getPositionIK( const geometry_msgs::msg::Pose &, const std::vector<double> &,
                       std::vector<double> &, moveit_msgs::msg::MoveItErrorCodes &,
                       const kinematics::KinematicsQueryOptions & ) const override
-  { return false; }
+  {
+    return false;
+  }
   bool searchPositionIK( const geometry_msgs::msg::Pose &pose, const std::vector<double> &, double,
                          std::vector<double> &solution, moveit_msgs::msg::MoveItErrorCodes &,
                          const kinematics::KinematicsQueryOptions & ) const override
@@ -148,17 +150,23 @@ public:
                          const std::vector<double> &, std::vector<double> &,
                          moveit_msgs::msg::MoveItErrorCodes &,
                          const kinematics::KinematicsQueryOptions & ) const override
-  { return false; }
+  {
+    return false;
+  }
   bool searchPositionIK( const geometry_msgs::msg::Pose &, const std::vector<double> &, double,
                          std::vector<double> &, const IKCallbackFn &,
                          moveit_msgs::msg::MoveItErrorCodes &,
                          const kinematics::KinematicsQueryOptions & ) const override
-  { return false; }
+  {
+    return false;
+  }
   bool searchPositionIK( const geometry_msgs::msg::Pose &, const std::vector<double> &, double,
                          const std::vector<double> &, std::vector<double> &, const IKCallbackFn &,
                          moveit_msgs::msg::MoveItErrorCodes &,
                          const kinematics::KinematicsQueryOptions & ) const override
-  { return false; }
+  {
+    return false;
+  }
   bool getPositionFK( const std::vector<std::string> &, const std::vector<double> &joint_angles,
                       std::vector<geometry_msgs::msg::Pose> &poses ) const override
   {
